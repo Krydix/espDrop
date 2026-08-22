@@ -9,12 +9,18 @@
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
 
 #include "espdrop/espdrop.h"
 #include "espdrop/awdl_probe.h"
+#include "maintenance_serial.h"
+#include "ota_update.h"
 #include "tapdrop/tapdrop.h"
+#include "wifi_provision.h"
 
 static const char *TAG = "espdrop_app";
 
@@ -109,6 +115,34 @@ void app_main(void)
     turn_off_devkit_rgb();
     ESP_LOGI(TAG, "espDrop %s", espdrop_version());
     log_board_info();
+    ESP_ERROR_CHECK(ota_update_init());
+
+    bool ota_pending = false;
+    ESP_ERROR_CHECK(ota_update_is_pending(&ota_pending));
+    if (ota_pending) {
+        const esp_err_t update_result = ota_update_apply_pending();
+        if (update_result == ESP_ERR_NOT_FOUND) {
+            ESP_LOGI(TAG, "published firmware is already installed");
+        } else if (update_result != ESP_OK) {
+            ESP_LOGE(TAG, "OTA maintenance failed: %s",
+                     esp_err_to_name(update_result));
+        }
+        ESP_LOGI(TAG, "leaving maintenance mode");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        esp_restart();
+    }
+
+    bool wifi_configured = false;
+    ESP_ERROR_CHECK(wifi_provision_is_configured(&wifi_configured));
+    if (!wifi_configured) {
+        ESP_ERROR_CHECK(wifi_provision_start());
+        ESP_ERROR_CHECK(maintenance_serial_start(true));
+        ESP_LOGW(TAG,
+                 "first OTA-capable boot: provision maintenance Wi-Fi over "
+                 "USB using Improv Serial");
+        return;
+    }
+    ESP_ERROR_CHECK(maintenance_serial_start(false));
 
     const espdrop_config_t config = {
         .device_name = CONFIG_ESPDROP_DEVICE_NAME,
@@ -131,5 +165,6 @@ void app_main(void)
     if (CONFIG_ESPDROP_AWDL_PROBE) {
         ESP_ERROR_CHECK(espdrop_awdl_probe_start(CONFIG_ESPDROP_AWDL_PROBE_CHANNEL));
     }
+    ESP_ERROR_CHECK(ota_update_confirm_running());
     ESP_LOGW(TAG, "protocol transport is research-stage; no AirDrop transfer is armed");
 }

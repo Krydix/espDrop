@@ -29,9 +29,10 @@ The AWDL milestone is deliberately split:
 1. **COMPLETE:** capture Apple AWDL action frames on channel 6.
 2. **COMPLETE:** parse peer address, synchronization parameters, election data,
    and channel sequence without transmitting.
-3. **PARTIAL:** emit synchronized PSF/MIF action frames; Apple peer admission
-   is not yet demonstrated.
-4. Inject one unicast AWDL data frame and confirm it over the air.
+3. **COMPLETE FOR MAC PEER:** emit synchronized PSF/MIF action frames and
+   observe the Apple peer admit the ESP after directed data.
+4. **COMPLETE FOR MAC PEER:** inject unicast AWDL/IPv6 data and confirm it
+   independently from macOS neighbor state.
 5. Attach an ESP-IDF netif with a link-local IPv6 address.
 6. Pass ICMPv6 echo in both directions.
 7. Pass UDP multicast on port 5353 in both directions.
@@ -76,17 +77,44 @@ master election, and channel availability state from live MIFs, then submitted
 reported 137 radio successes and zero failures. The normal firmware and GitHub
 Pages image leave this experiment disabled.
 
-**NOT CONFIRMED:** neither Apple peer sent a directed AWDL action to the ESP,
-and macOS did not create an IPv6 neighbor entry for the ESP. Apple action
-traffic remained active throughout, but that alone does not prove either peer
-parsed or admitted the ESP. Gate 3 therefore remains partial. The compact
-evidence is preserved in
+**NOT CONFIRMED IN THIS FIRST RUN:** neither Apple peer sent a directed AWDL
+action to the ESP, and macOS did not create an IPv6 neighbor entry for the
+ESP. Apple action traffic remained active throughout, but that run alone did
+not prove either peer parsed or admitted the ESP. The compact evidence is
+preserved in
 [`lab/2026-08-23-awdl-tx-lab.json`](lab/2026-08-23-awdl-tx-lab.json).
 
 The capture also corrected two stale OWL-era assumptions for the current Apple
 frames observed here: the version TLV carries `0xa0`, and ARPA/name data uses
 TLV type 16 rather than type 17. These are observations, not yet general
 compatibility claims.
+
+## First directed AWDL data result
+
+**CONFIRMED on 2026-08-23 against this Mac:** the S3 constructed a 112-byte
+non-QoS AWDL data frame containing an IPv6 Neighbor Solicitation for the live
+macOS `awdl0` master. The frame used the ESP's real station MAC, its derived
+link-local address `fe80::1edb:d4ff:fe42:3fa0`, hop limit 255, a source
+link-layer option, and a host-tested ICMPv6 checksum.
+
+Twenty probes were submitted while deliberately unscheduled. Three reported
+successful radio completion and seventeen failed, consistent with hitting
+only some peer availability windows. During that transmit window, independent
+macOS polling created this previously absent entry:
+
+    fe80::1edb:d4ff:fe42:3fa0%awdl0  1c:db:d4:42:3f:a0  awdl0 permanent R
+
+This is the first Apple-side proof that an independently constructed ESP frame
+crossed AWDL and was consumed far enough to populate Apple IPv6 neighbor
+state. It completes gate 4 for the Mac peer. It does not yet prove the reverse
+data path or iPhone interoperability; the ESP observed no Neighbor
+Advertisement. Evidence is in
+[`lab/2026-08-23-awdl-data-neighbor.json`](lab/2026-08-23-awdl-data-neighbor.json).
+
+The next bounded lab adds host-checked ICMPv6 Echo Requests immediately after
+each Neighbor Solicitation and recognizes directed Echo Replies by identifier
+and sequence. This is instrumentation, not evidence yet: the reverse data path
+remains unknown until an Apple reply appears in a captured hardware artifact.
 
 ## Timing model
 
@@ -109,8 +137,9 @@ callback.
   channel 6 at high volume. Whether channel-6 availability windows are long
   enough for reliable file transfer remains unknown.
 - **PARTIALLY CONFIRMED:** ESP-IDF can radio-complete bounded AWDL management
-  action frames without driver error. Current Apple parsing/admission and raw
-  AWDL data-frame handling remain unknown.
+  action frames without driver error. Raw unicast AWDL/IPv6 reached macOS and
+  populated its neighbor table. Current iPhone admission and reliable reverse
+  data-frame reception remain unknown.
 - **UNKNOWN:** sustainable bidirectional throughput under BLE coexistence and
   channel switching.
 - **UNKNOWN:** whether an infrastructure STA connection can coexist with AWDL.

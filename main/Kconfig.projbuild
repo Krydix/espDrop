@@ -20,13 +20,13 @@ config ESPDROP_AWDL_PROBE_CHANNEL
     default 6
 
 config ESPDROP_AWDL_TX_LAB
-    bool "Enable bounded AWDL action-frame transmit experiment"
+    bool "Enable bounded AWDL action/data transmit experiment"
     depends on ESPDROP_AWDL_PROBE
     default n
     help
         Research-only profile. After observing a valid MIF, transmit PSF/MIF
-        action frames for no more than 15 seconds. Normal and web-flasher
-        builds must leave this disabled.
+        action frames plus bounded IPv6 neighbor and echo probes for no more
+        than 15 seconds. Normal and web-flasher builds must leave this disabled.
 
 config TAPDROP_NFC_FIELD_GPIO
     int "NFC field-detect GPIO (-1 disables hardware input)"

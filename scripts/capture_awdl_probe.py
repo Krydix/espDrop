@@ -49,12 +49,68 @@ TX_FRAME = re.compile(
 )
 
 TX_SUMMARY = re.compile(
-    r"TX-LAB-SUMMARY attempted=(?P<attempted>\d+) "
-    r"accepted=(?P<accepted>\d+) errors=(?P<errors>\d+) "
-    r"radio_completed=(?P<radio_completed>\d+) "
-    r"radio_success=(?P<radio_success>\d+) "
-    r"radio_failed=(?P<radio_failed>\d+) "
-    r"directed_reactions=(?P<directed_reactions>\d+)",
+    r"TX-LAB-SUMMARY action_attempted=(?P<action_attempted>\d+) "
+    r"action_accepted=(?P<action_accepted>\d+) "
+    r"action_errors=(?P<action_errors>\d+) "
+    r"action_radio_completed=(?P<action_radio_completed>\d+) "
+    r"action_radio_success=(?P<action_radio_success>\d+) "
+    r"action_radio_failed=(?P<action_radio_failed>\d+) "
+    r"data_attempted=(?P<data_attempted>\d+) "
+    r"data_accepted=(?P<data_accepted>\d+) "
+    r"data_errors=(?P<data_errors>\d+) "
+    r"data_radio_completed=(?P<data_radio_completed>\d+) "
+    r"data_radio_success=(?P<data_radio_success>\d+) "
+    r"data_radio_failed=(?P<data_radio_failed>\d+) "
+    r"echo_attempted=(?P<echo_attempted>\d+) "
+    r"echo_accepted=(?P<echo_accepted>\d+) "
+    r"echo_errors=(?P<echo_errors>\d+) "
+    r"directed_reactions=(?P<directed_reactions>\d+) "
+    r"neighbor_advertisements=(?P<neighbor_advertisements>\d+) "
+    r"echo_replies=(?P<echo_replies>\d+)",
+    re.IGNORECASE,
+)
+
+TX_NS = re.compile(
+    r"TX-LAB-NS number=(?P<number>\d+) bytes=(?P<bytes>\d+) "
+    r"target=(?P<target>[0-9a-f:]+) driver=(?P<driver>[A-Z0-9_]+)",
+    re.IGNORECASE,
+)
+
+TX_NA = re.compile(
+    r"TX-LAB-NA IPv6 Neighbor Advertisement from "
+    r"(?P<source>[0-9a-f:]+) count=(?P<count>\d+)",
+    re.IGNORECASE,
+)
+
+TX_ECHO = re.compile(
+    r"TX-LAB-ECHO number=(?P<number>\d+) bytes=(?P<bytes>\d+) "
+    r"target=(?P<target>[0-9a-f:]+) driver=(?P<driver>[A-Z0-9_]+)",
+    re.IGNORECASE,
+)
+
+TX_ECHO_REPLY = re.compile(
+    r"TX-LAB-ECHO-REPLY from (?P<source>[0-9a-f:]+) "
+    r"id=(?P<identifier>\d+) sequence=(?P<sequence>\d+) "
+    r"count=(?P<count>\d+)",
+    re.IGNORECASE,
+)
+
+AWDL_DATA = re.compile(
+    r"AWDL-DATA src=(?P<source>[0-9a-f:]+) "
+    r"dst=(?P<destination>[0-9a-f:]+) rssi=(?P<rssi>-?\d+) "
+    r"channel=(?P<channel>\d+) bytes=(?P<bytes>\d+) "
+    r"seq=(?P<sequence>\d+) qos=(?P<qos>\d+) "
+    r"amsdu=(?P<amsdu>\d+) ethertype=(?P<ethertype>0x[0-9a-f]+) "
+    r"ipv6=(?P<ipv6>\d+) next=(?P<next_header>\d+) "
+    r"hop=(?P<hop_limit>\d+) icmp=(?P<icmp_type>\d+) "
+    r"directed=(?P<directed>\d+)",
+    re.IGNORECASE,
+)
+
+AWDL_DATA_DIAGNOSTIC = re.compile(
+    r"AWDL-DATA-DIAG raw=(?P<raw>\d+) decoded=(?P<decoded>\d+) "
+    r"ipv6=(?P<ipv6>\d+) na=(?P<neighbor_advertisements>\d+) "
+    r"echo_reply=(?P<echo_replies>\d+)",
     re.IGNORECASE,
 )
 
@@ -87,6 +143,12 @@ def main() -> None:
     tx_frames = []
     tx_summary = None
     tx_reactions = []
+    tx_neighbor_solicitations = []
+    tx_neighbor_advertisements = []
+    tx_echo_requests = []
+    tx_echo_replies = []
+    awdl_data_frames = []
+    awdl_data_diagnostics = []
     boot_lines = []
     with serial.Serial(args.port, 115200, timeout=0.25) as connection:
         connection.dtr = False
@@ -145,6 +207,46 @@ def main() -> None:
                 reaction = tx_reaction_match.groupdict()
                 reaction["count"] = int(reaction["count"])
                 tx_reactions.append(reaction)
+            tx_ns_match = TX_NS.search(line)
+            if tx_ns_match:
+                solicitation = tx_ns_match.groupdict()
+                solicitation["number"] = int(solicitation["number"])
+                solicitation["bytes"] = int(solicitation["bytes"])
+                tx_neighbor_solicitations.append(solicitation)
+            tx_na_match = TX_NA.search(line)
+            if tx_na_match:
+                advertisement = tx_na_match.groupdict()
+                advertisement["count"] = int(advertisement["count"])
+                tx_neighbor_advertisements.append(advertisement)
+            tx_echo_match = TX_ECHO.search(line)
+            if tx_echo_match:
+                echo = tx_echo_match.groupdict()
+                echo["number"] = int(echo["number"])
+                echo["bytes"] = int(echo["bytes"])
+                tx_echo_requests.append(echo)
+            tx_echo_reply_match = TX_ECHO_REPLY.search(line)
+            if tx_echo_reply_match:
+                reply = tx_echo_reply_match.groupdict()
+                for key in ("identifier", "sequence", "count"):
+                    reply[key] = int(reply[key])
+                tx_echo_replies.append(reply)
+            data_match = AWDL_DATA.search(line)
+            if data_match:
+                record = data_match.groupdict()
+                for key in (
+                    "rssi", "channel", "bytes", "sequence", "qos",
+                    "amsdu", "ipv6", "next_header", "hop_limit",
+                    "icmp_type", "directed",
+                ):
+                    record[key] = int(record[key])
+                awdl_data_frames.append(record)
+            data_diagnostic_match = AWDL_DATA_DIAGNOSTIC.search(line)
+            if data_diagnostic_match:
+                awdl_data_diagnostics.append({
+                    key: int(value)
+                    for key, value in
+                    data_diagnostic_match.groupdict().items()
+                })
 
     unique_sources = sorted({item["source"] for item in frames})
     raw_captures = []
@@ -181,6 +283,18 @@ def main() -> None:
             "sampledFrames": tx_frames,
             "summary": tx_summary,
             "reactions": tx_reactions,
+            "neighborSolicitations": tx_neighbor_solicitations,
+            "neighborAdvertisements": tx_neighbor_advertisements,
+            "echoRequests": tx_echo_requests,
+            "echoReplies": tx_echo_replies,
+        },
+        "awdlData": {
+            "frames": awdl_data_frames,
+            "diagnostics": awdl_data_diagnostics,
+            "finalDiagnostics": (
+                awdl_data_diagnostics[-1]
+                if awdl_data_diagnostics else None
+            ),
         },
         "bootLogPrefix": boot_lines,
     }

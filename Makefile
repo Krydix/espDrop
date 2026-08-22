@@ -22,7 +22,7 @@ define run_idf
 			-D SDKCONFIG="$(SDKCONFIG)" $(1)'
 endef
 
-.PHONY: help build reconfigure clean fullclean flash monitor flash-monitor ports size test test-hardware-awdl web-installer lab-awdl-tx-build lab-awdl-tx-flash lab-awdl-tx-test
+.PHONY: help build reconfigure clean fullclean flash monitor flash-monitor ports size test test-hardware-awdl web-installer provision-wifi ota-trigger lab-awdl-tx-build lab-awdl-tx-flash lab-awdl-tx-test
 
 help:
 	@printf '%s\n' \
@@ -37,6 +37,8 @@ help:
 		'  make lab-awdl-tx-flash PORT=...  Flash bounded 15 s TX experiment' \
 		'  make lab-awdl-tx-test PORT=...   Flash and capture TX experiment' \
 		'  make web-installer         Stage the GitHub Pages web flasher' \
+		'  make provision-wifi PORT=...  Securely provision OTA Wi-Fi over USB' \
+		'  make ota-trigger PORT=...     Ask firmware to install GitHub Pages build' \
 		'  make size                  Show firmware size information'
 
 build:
@@ -105,6 +107,26 @@ test:
 		"$(ROOT_DIR)/tests/test_awdl_tx.c" \
 		-o "$(BUILD_DIR)/host-tests/test_awdl_tx"
 	@"$(BUILD_DIR)/host-tests/test_awdl_tx"
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
+		-I"$(ROOT_DIR)/core/include" \
+		"$(ROOT_DIR)/core/src/awdl_data.c" \
+		"$(ROOT_DIR)/tests/test_awdl_data.c" \
+		-o "$(BUILD_DIR)/host-tests/test_awdl_data"
+	@"$(BUILD_DIR)/host-tests/test_awdl_data"
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
+		-I"$(ROOT_DIR)/main" \
+		"$(ROOT_DIR)/main/improv_serial_codec.c" \
+		"$(ROOT_DIR)/tests/test_improv_serial_codec.c" \
+		-o "$(BUILD_DIR)/host-tests/test_improv_serial_codec"
+	@"$(BUILD_DIR)/host-tests/test_improv_serial_codec"
+
+provision-wifi:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@python3 "$(ROOT_DIR)/scripts/provision_wifi.py" --port "$(PORT)"
+
+ota-trigger:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@python3 "$(ROOT_DIR)/scripts/trigger_ota.py" --port "$(PORT)"
 
 test-hardware-awdl:
 	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }

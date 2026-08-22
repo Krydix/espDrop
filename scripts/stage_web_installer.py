@@ -78,6 +78,7 @@ def main() -> None:
         "name": "espDrop",
         "version": version,
         "new_install_prompt_erase": True,
+        "new_install_improv_wait_time": 30,
         "builds": [{"chipFamily": "ESP32-S3", "parts": parts}],
     }
     (args.output_dir / "manifest.json").write_text(

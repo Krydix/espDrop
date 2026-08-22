@@ -18,6 +18,14 @@ void espdrop_awdl_tx_lab_observe_mif(
 
 void espdrop_awdl_tx_lab_note_directed_peer(const uint8_t source[6]);
 
+void espdrop_awdl_tx_lab_note_neighbor_advertisement(
+    const uint8_t source[6]);
+
+void espdrop_awdl_tx_lab_note_echo_reply(
+    const uint8_t source[6],
+    uint16_t identifier,
+    uint16_t sequence);
+
 #ifdef __cplusplus
 }
 #endif

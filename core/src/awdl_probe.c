@@ -1,5 +1,6 @@
 #include "espdrop/awdl_probe.h"
 #include "espdrop/awdl_frame.h"
+#include "espdrop/awdl_data.h"
 #include "espdrop/awdl_tlv.h"
 #include "espdrop/awdl_tx_lab.h"
 #include "espdrop/espdrop.h"
@@ -46,9 +47,30 @@ typedef struct {
     uint8_t frame[AWDL_CAPTURE_BYTES];
 } awdl_mif_capture_t;
 
+typedef struct {
+    uint8_t source[6];
+    uint8_t destination[6];
+    int8_t rssi;
+    uint8_t channel;
+    uint32_t timestamp_us;
+    uint16_t frame_length;
+    uint16_t awdl_sequence;
+    uint16_t ethertype;
+    uint8_t next_header;
+    uint8_t hop_limit;
+    uint8_t icmp_type;
+    uint16_t icmp_identifier;
+    uint16_t icmp_sequence;
+    bool qos;
+    bool amsdu;
+    bool ipv6;
+    bool directed_to_self;
+} awdl_data_record_t;
+
 static const char *TAG = "awdl_probe";
 static QueueHandle_t record_queue;
 static QueueHandle_t capture_queue;
+static QueueHandle_t data_queue;
 static espdrop_awdl_probe_stats_t stats;
 static bool started;
 static volatile uint32_t management_frames;
@@ -58,6 +80,11 @@ static volatile uint32_t vendor_action_frames;
 static volatile uint32_t apple_oui_matches;
 static volatile uint32_t awdl_header_matches;
 static volatile uint32_t decoded_frames;
+static volatile uint32_t data_frames;
+static volatile uint32_t decoded_data_frames;
+static volatile uint32_t ipv6_data_frames;
+static volatile uint32_t neighbor_advertisements;
+static volatile uint32_t echo_replies;
 static uint8_t sampled_mif_sources[AWDL_CAPTURE_PEERS][6];
 static size_t sampled_mif_source_count;
 static uint8_t station_mac[6];
@@ -66,6 +93,64 @@ static const uint8_t diagnostic_apple_oui[3] = {0x00, 0x17, 0xf2};
 static const uint8_t diagnostic_awdl_bssid[6] = {
     0x00, 0x25, 0x00, 0xff, 0x94, 0x73,
 };
+
+static uint16_t read_be16(const uint8_t *value)
+{
+    return (uint16_t)((uint16_t)value[0] << 8U) | value[1];
+}
+
+static void promiscuous_data_rx(const wifi_promiscuous_pkt_t *packet)
+{
+    ++data_frames;
+    const uint8_t *frame = packet->payload;
+    const size_t received_length = packet->rx_ctrl.sig_len;
+    const size_t length = received_length >= 4U
+                              ? received_length - 4U : received_length;
+    espdrop_awdl_data_t data;
+    if (!espdrop_awdl_decode_data(frame, length, &data) ||
+        memcmp(data.source, station_mac, sizeof(station_mac)) == 0) {
+        return;
+    }
+
+    ++decoded_data_frames;
+    awdl_data_record_t record = {
+        .rssi = packet->rx_ctrl.rssi,
+        .channel = packet->rx_ctrl.channel,
+        .timestamp_us = packet->rx_ctrl.timestamp,
+        .frame_length = (uint16_t)(length > UINT16_MAX
+                                       ? UINT16_MAX : length),
+        .awdl_sequence = data.sequence,
+        .ethertype = data.ethertype,
+        .qos = data.qos,
+        .amsdu = data.amsdu,
+    };
+    memcpy(record.source, data.source, sizeof(record.source));
+    memcpy(record.destination, data.destination, sizeof(record.destination));
+    record.directed_to_self =
+        memcmp(record.destination, station_mac, sizeof(station_mac)) == 0;
+
+    espdrop_awdl_ipv6_t ipv6;
+    if (espdrop_awdl_decode_ipv6(&data, &ipv6)) {
+        record.ipv6 = true;
+        record.next_header = ipv6.next_header;
+        record.hop_limit = ipv6.hop_limit;
+        record.icmp_type = ipv6.icmp_type;
+        ++ipv6_data_frames;
+        if (record.directed_to_self && ipv6.next_header == 58U &&
+            ipv6.icmp_type == 136U) {
+            ++neighbor_advertisements;
+        } else if (record.directed_to_self && ipv6.next_header == 58U &&
+                   ipv6.icmp_type == 129U &&
+                   ipv6.icmp_payload_length >= 4U) {
+            record.icmp_identifier = read_be16(ipv6.icmp_payload);
+            record.icmp_sequence = read_be16(ipv6.icmp_payload + 2U);
+            ++echo_replies;
+        }
+    }
+    if (xQueueSend(data_queue, &record, 0) != pdTRUE) {
+        ++stats.dropped_records;
+    }
+}
 
 static bool should_capture_mif(const uint8_t source[6])
 {
@@ -84,11 +169,18 @@ static bool should_capture_mif(const uint8_t source[6])
 
 static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
 {
-    if (type != WIFI_PKT_MGMT || record_queue == NULL) {
+    if (record_queue == NULL || data_queue == NULL) {
         return;
     }
     const wifi_promiscuous_pkt_t *packet =
         (const wifi_promiscuous_pkt_t *)buffer;
+    if (type == WIFI_PKT_DATA) {
+        promiscuous_data_rx(packet);
+        return;
+    }
+    if (type != WIFI_PKT_MGMT) {
+        return;
+    }
     ++management_frames;
     const uint8_t *frame = packet->payload;
     const size_t received_length = packet->rx_ctrl.sig_len;
@@ -420,6 +512,43 @@ static void probe_log_task(void *argument)
             process_mif_capture(&capture);
         }
 
+        awdl_data_record_t data_record;
+        while (data_queue != NULL &&
+               xQueueReceive(data_queue, &data_record, 0) == pdTRUE) {
+            ESP_LOGI(TAG,
+                     "AWDL-DATA src=%02x:%02x:%02x:%02x:%02x:%02x "
+                     "dst=%02x:%02x:%02x:%02x:%02x:%02x rssi=%d "
+                     "channel=%u bytes=%u seq=%u qos=%u amsdu=%u "
+                     "ethertype=0x%04x ipv6=%u next=%u hop=%u icmp=%u "
+                     "directed=%u",
+                     data_record.source[0], data_record.source[1],
+                     data_record.source[2], data_record.source[3],
+                     data_record.source[4], data_record.source[5],
+                     data_record.destination[0], data_record.destination[1],
+                     data_record.destination[2], data_record.destination[3],
+                     data_record.destination[4], data_record.destination[5],
+                     data_record.rssi, data_record.channel,
+                     data_record.frame_length, data_record.awdl_sequence,
+                     data_record.qos ? 1U : 0U,
+                     data_record.amsdu ? 1U : 0U,
+                     data_record.ethertype, data_record.ipv6 ? 1U : 0U,
+                     data_record.next_header, data_record.hop_limit,
+                     data_record.icmp_type,
+                     data_record.directed_to_self ? 1U : 0U);
+            if (data_record.directed_to_self && data_record.ipv6 &&
+                data_record.next_header == 58U &&
+                data_record.icmp_type == 136U) {
+                espdrop_awdl_tx_lab_note_neighbor_advertisement(
+                    data_record.source);
+            } else if (data_record.directed_to_self && data_record.ipv6 &&
+                       data_record.next_header == 58U &&
+                       data_record.icmp_type == 129U) {
+                espdrop_awdl_tx_lab_note_echo_reply(
+                    data_record.source, data_record.icmp_identifier,
+                    data_record.icmp_sequence);
+            }
+        }
+
         const TickType_t now = xTaskGetTickCount();
         if (now - last_diagnostic >= pdMS_TO_TICKS(5000)) {
             ESP_LOGI(TAG,
@@ -433,6 +562,14 @@ static void probe_log_task(void *argument)
                      (unsigned long)awdl_header_matches,
                      (unsigned long)decoded_frames,
                      (unsigned long)stats.dropped_records);
+            ESP_LOGI(TAG,
+                     "AWDL-DATA-DIAG raw=%lu decoded=%lu ipv6=%lu na=%lu "
+                     "echo_reply=%lu",
+                     (unsigned long)data_frames,
+                     (unsigned long)decoded_data_frames,
+                     (unsigned long)ipv6_data_frames,
+                     (unsigned long)neighbor_advertisements,
+                     (unsigned long)echo_replies);
             last_diagnostic = now;
         }
     }
@@ -467,7 +604,8 @@ esp_err_t espdrop_awdl_probe_start(uint8_t channel)
         "initialize bounded transmit lab");
 
     const wifi_promiscuous_filter_t filter = {
-        .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT,
+        .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT |
+                       WIFI_PROMIS_FILTER_MASK_DATA,
     };
     ESP_RETURN_ON_ERROR(esp_wifi_set_promiscuous_filter(&filter), TAG,
                         "set promiscuous filter");
@@ -482,12 +620,22 @@ esp_err_t espdrop_awdl_probe_start(uint8_t channel)
         record_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
-    if (xTaskCreate(probe_log_task, "awdl_probe_log", 6144, NULL, 5, NULL) !=
-        pdPASS) {
+    data_queue = xQueueCreate(16, sizeof(awdl_data_record_t));
+    if (data_queue == NULL) {
         vQueueDelete(record_queue);
         vQueueDelete(capture_queue);
         record_queue = NULL;
         capture_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    if (xTaskCreate(probe_log_task, "awdl_probe_log", 6144, NULL, 5, NULL) !=
+        pdPASS) {
+        vQueueDelete(record_queue);
+        vQueueDelete(capture_queue);
+        vQueueDelete(data_queue);
+        record_queue = NULL;
+        capture_queue = NULL;
+        data_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
 

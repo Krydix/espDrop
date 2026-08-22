@@ -29,6 +29,10 @@ cloud service.
 - receive-only detection of AWDL MIF/PSF vendor action frames on channel 6
 - host-tested PSF/MIF construction plus a separate 15-second transmit lab
   profile (disabled in normal and web-flasher builds)
+- host-tested AWDL/IPv6 Neighbor Solicitation framing; macOS accepted it and
+  installed the ESP as a temporary `awdl0` IPv6 neighbor
+- host-tested directed ICMPv6 Echo Request framing and reply instrumentation
+  for the next reverse-path hardware gate
 - bounded ephemeral BLE/AWDL/AirDrop peer model
 - TapDrop scoring based on timing, appearance, cross-layer observation, and
   RSSI
@@ -36,6 +40,8 @@ cloud service.
 - NFC field-detect GPIO/session boundary (disabled until a GPIO is selected)
 - host tests on macOS and Linux
 - target-specific firmware artifacts and a GitHub Pages Web Serial installer
+- dual-slot OTA with bootloader rollback, certificate-verified GitHub Pages
+  downloads, and one-shot USB-triggered maintenance mode
 - protocol notes that distinguish confirmed, referenced, and unknown behavior
 
 ## Repository layout
@@ -89,11 +95,41 @@ The active action-frame experiment is intentionally separate:
     make lab-awdl-tx-test PORT=/dev/cu.usbmodemXXXX DURATION=25
 
 It waits for a valid live MIF, transmits for at most 15 seconds, and records
-both raw-API acceptance and radio completion. This is a research target, not a
-general-purpose firmware image.
+raw-API acceptance and radio completion for action frames plus bounded IPv6
+neighbor probes. This is a research target, not a general-purpose firmware
+image.
 
 Serve `build/web-installer` over localhost or HTTPS. GitHub Pages deployment
 is defined in [pages.yml](.github/workflows/pages.yml).
+
+## Firmware updates
+
+The OTA design follows ESPresso's provisioning and release pattern while
+keeping espDrop's normal radio path local-first. Infrastructure Wi-Fi is used
+only during provisioning or a one-shot maintenance boot; normal operation
+returns to the AWDL channel-6 probe.
+
+The first OTA-capable installation must be a complete USB flash because it
+replaces the old factory-only partition map with two 3 MiB application slots:
+
+    make flash PORT=/dev/cu.usbmodemXXXX
+
+Keep USB connected and provision maintenance Wi-Fi. The password prompt is
+hidden and credentials are stored by ESP-IDF in NVS; they are not added to the
+repository or command history:
+
+    make provision-wifi PORT=/dev/cu.usbmodemXXXX
+
+After CI publishes a newer `main` build to GitHub Pages, trigger an update:
+
+    make ota-trigger PORT=/dev/cu.usbmodemXXXX
+
+The physical USB command writes a one-shot maintenance flag and restarts. The
+device connects using its saved credentials, synchronizes its clock, downloads
+`firmware/esp32s3/espdrop.bin` over certificate-verified HTTPS, rejects images
+whose project name is not `espdrop`, writes the inactive slot, and restarts.
+The bootloader rolls back unless the new build reaches a healthy normal-mode
+startup. See [OTA maintenance design](docs/ota.md).
 
 ## First lab procedure
 
@@ -117,6 +153,7 @@ bidirectional IPv6 over AWDL.
 - [BLE discovery](docs/ble-discovery.md)
 - [Send flow](docs/send-flow.md)
 - [Receive flow](docs/receive-flow.md)
+- [OTA maintenance design](docs/ota.md)
 - [Unknowns and milestone evidence](docs/unknowns.md)
 
 The public implementation baseline is Apple’s security documentation and the

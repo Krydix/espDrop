@@ -41,8 +41,10 @@ These hashes are research provenance, not dependencies in release firmware.
   hardware MIFs parsed successfully with 13/16 TLVs and no dropped records.
 - [x] Radio-complete an independently built synchronized PSF/MIF frame; the
   bounded lab sent 137/137 successfully with no Wi-Fi driver failures.
-- [ ] Observe an Apple peer acknowledge, direct traffic to, or otherwise admit
-  the ESP; the first lab saw zero directed actions and no ESP IPv6 neighbor.
+- [x] Observe an Apple peer act upon ESP traffic; after a valid AWDL/IPv6
+  Neighbor Solicitation, macOS installed the ESP's exact link-local/MAC pair
+  as a previously absent `awdl0` neighbor.
+- [ ] Reproduce peer admission against the stock iPhone rather than the Mac.
 - [ ] Maintain channel-6 synchronization for 30 minutes.
 - [ ] Attach link-local IPv6 through an ESP-IDF netif.
 - [ ] ICMPv6 ESP → iPhone.
@@ -80,6 +82,11 @@ packet capture and for exercising host-side protocol code.
 **CONFIRMED:** during the first transmit lab, this Mac's `awdl0` MAC was the
 elected master seen by the ESP. Its IPv6 neighbor table contained the Mac and
 iPhone AWDL addresses afterward, but not the ESP address.
+
+**CONFIRMED:** during the subsequent directed-data lab, macOS added
+`fe80::1edb:d4ff:fe42:3fa0%awdl0` mapped to the ESP MAC. Three of twenty raw
+unicast frames reported radio success. The entry was temporary and disappeared
+after the ESP lab session reset.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

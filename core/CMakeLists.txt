@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "src/espdrop.c"
         "src/awdl_frame.c"
+        "src/awdl_data.c"
         "src/awdl_tlv.c"
         "src/awdl_tx.c"
         "src/awdl_tx_lab.c"

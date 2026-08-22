@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "startedAt": "2026-08-22T23:01:34+00:00",
+  "localDate": "2026-08-23",
+  "durationSeconds": 25,
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "ipv6LinkLocal": "fe80::1edb:d4ff:fe42:3fa0",
+    "channel": 6,
+    "profile": "CONFIG_ESPDROP_AWDL_TX_LAB=y"
+  },
+  "applePeer": {
+    "kind": "Mac awdl0 elected master",
+    "mac": "ea:33:2c:82:f5:7f",
+    "ipv6LinkLocal": "fe80::e833:2cff:fe82:f57f"
+  },
+  "packet": {
+    "bytes": 112,
+    "ieee80211Type": "non-QoS data",
+    "llcProtocolId": "0x0800",
+    "awdlEthertype": "0x86dd",
+    "ipv6NextHeader": 58,
+    "ipv6HopLimit": 255,
+    "icmpv6Type": 135,
+    "icmpv6Meaning": "Neighbor Solicitation",
+    "sourceLinkLayerOption": "1c:db:d4:42:3f:a0",
+    "checksumHostTested": true
+  },
+  "transmit": {
+    "attempted": 20,
+    "rawApiAccepted": 20,
+    "rawApiErrors": 0,
+    "radioCompleted": 20,
+    "radioSuccess": 3,
+    "radioFailed": 17
+  },
+  "independentMacObservation": {
+    "pollIntervalSeconds": 0.5,
+    "neighborAppearedDuringTransmitWindow": true,
+    "entry": "fe80::1edb:d4ff:fe42:3fa0%awdl0 1c:db:d4:42:3f:a0 awdl0 permanent R",
+    "entryWasAbsentBeforeThisSlice": true
+  },
+  "espReceiveObservation": {
+    "neighborAdvertisements": 0,
+    "reverseIpv6PathConfirmed": false
+  },
+  "result": {
+    "confirmed": "macOS received enough of the ESP-originated AWDL/IPv6 packet to install its exact IPv6 and link-layer source as an awdl0 neighbor.",
+    "notConfirmed": "The ESP has not yet received an IPv6 response, attached an ESP-IDF netif, or exchanged ICMPv6 echo traffic.",
+    "gate4": "complete-for-mac-peer"
+  }
+}

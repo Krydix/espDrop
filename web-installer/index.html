@@ -37,13 +37,13 @@
       <h2 class="eyebrow">Install</h2>
       <div class="card install">
         <h2>Connect an ESP32-S3.</h2>
-        <p>Use desktop Chrome or Edge and select the board’s USB serial port.</p>
+        <p>Use desktop Chrome or Edge and select the board’s USB serial port. Keep it connected afterward to provision maintenance Wi‑Fi privately over Improv Serial.</p>
         <esp-web-install-button manifest="./manifest.json">
           <button class="button" slot="activate" type="button">Install espDrop</button>
           <span slot="unsupported" class="support">Web Serial is unavailable. Open this page in desktop Chrome or Edge.</span>
           <span slot="not-allowed" class="support">Web Serial requires HTTPS or localhost.</span>
         </esp-web-install-button>
-        <p class="warning">Research firmware: the current build validates the core and TapDrop foundation; stock-iPhone transfer is not claimed yet.</p>
+        <p class="warning">A complete install adopts the dual-slot OTA partition map. Research firmware: stock-iPhone transfer is not claimed yet.</p>
       </div>
     </section>
     <p class="privacy">Flashing replaces the board’s existing firmware. espDrop does not require an account or Internet connection during operation.</p>

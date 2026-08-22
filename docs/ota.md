@@ -1,0 +1,47 @@
+# OTA maintenance design
+
+Status date: 2026-08-23.
+
+espDrop uses ESPresso's dual-slot, rollback-protected GitHub Pages update
+pattern, adapted so infrastructure Wi-Fi never remains active during normal
+AWDL operation.
+
+## Partition migration
+
+The 16 MiB target layout contains `ota_0` and `ota_1`, each 3 MiB, plus an OTA
+selection sector, NVS, PHY data, coredump storage, and approximately 9.8 MiB of
+application storage. A board running the earlier factory-only map needs one
+complete USB flash. Application-only updates cannot change a partition table.
+
+## Modes
+
+`provisioning`
+: Entered when no successful maintenance Wi-Fi setup has been recorded. The
+  AWDL probe does not start. Credentials arrive over the physical USB link via
+  Improv Serial, are tested, persisted by ESP-IDF, and never logged.
+
+`normal`
+: Starts the AWDL research stack and a small USB maintenance-command parser.
+  Infrastructure Wi-Fi is not joined. Sending the exact `ESPDROP OTA` command
+  records a one-shot request and restarts.
+
+`OTA maintenance`
+: Consumes the request before networking, joins the saved network, validates
+  time for TLS, and fetches the target app image from GitHub Pages. It either
+  installs a different version or returns to normal mode after a bounded
+  failure. Consuming the request first prevents a bad network from causing a
+  reboot loop.
+
+## Trust and recovery
+
+- HTTPS certificate verification uses ESP-IDF's common CA bundle.
+- The downloaded ESP app descriptor must name the `espdrop` project.
+- ESP-IDF validates the image and target before selecting the inactive slot.
+- Bootloader rollback remains armed until the new app initializes espDrop,
+  TapDrop, the AWDL probe, and USB maintenance control.
+- The OTA trigger requires the physical USB data connection.
+- An interrupted download leaves the currently selected app untouched.
+- A full Web Serial installation remains the recovery path.
+
+This path is deliberately separate from file reception. AirDropped content can
+never arm or install firmware.
