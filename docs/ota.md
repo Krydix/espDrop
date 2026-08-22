@@ -45,3 +45,13 @@ complete USB flash. Application-only updates cannot change a partition table.
 
 This path is deliberately separate from file reception. AirDropped content can
 never arm or install firmware.
+
+## Hardware proof
+
+**CONFIRMED on 2026-08-23:** after one complete USB migration, the target was
+provisioned over Improv Serial and booted normally without joining the saved
+infrastructure network. A physical USB OTA command then entered one-shot
+maintenance mode, joined the saved network, downloaded the certificate-verified
+GitHub Pages image, moved from `ota_0` at `0x20000` to `ota_1` at `0x320000`,
+and booted version `0.1.0-e5a941a`. A subsequent restart remained on `ota_1`,
+confirming the healthy-start path canceled pending rollback.

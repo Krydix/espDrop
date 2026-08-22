@@ -111,10 +111,23 @@ data path or iPhone interoperability; the ESP observed no Neighbor
 Advertisement. Evidence is in
 [`lab/2026-08-23-awdl-data-neighbor.json`](lab/2026-08-23-awdl-data-neighbor.json).
 
-The next bounded lab adds host-checked ICMPv6 Echo Requests immediately after
-each Neighbor Solicitation and recognizes directed Echo Replies by identifier
-and sequence. This is instrumentation, not evidence yet: the reverse data path
-remains unknown until an Apple reply appears in a captured hardware artifact.
+## First ICMPv6 Echo result
+
+**CONFIRMED on 2026-08-23 against this Mac:** a second bounded lab interleaved
+20 Neighbor Solicitations and 20 host-tested ICMPv6 Echo Requests across the
+15-second window. ESP-IDF accepted all 40 data frames. Its completion callback,
+classified by an AWDL sequence marker retained in the returned frame, reported
+3/20 Neighbor Solicitations and 4/20 Echo Requests as radio successes. There
+were no unclassified data completions. Independent macOS polling observed the
+ESP's exact `awdl0` neighbor mapping in 53 samples during the same run.
+
+**NOT CONFIRMED:** the ESP decoded zero Apple AWDL data frames, Neighbor
+Advertisements, or Echo Replies despite observing 147 raw data frames. This
+proves Echo transmission reached the radio-success boundary but not that macOS
+accepted the Echo payload or replied. Gate 6 and M1 remain incomplete. The
+next focus is reverse Apple data decapsulation, including QoS and A-MSDU frame
+forms. Compact evidence is preserved in
+[`lab/2026-08-23-awdl-echo-reverse.json`](lab/2026-08-23-awdl-echo-reverse.json).
 
 ## Timing model
 
@@ -137,9 +150,10 @@ callback.
   channel 6 at high volume. Whether channel-6 availability windows are long
   enough for reliable file transfer remains unknown.
 - **PARTIALLY CONFIRMED:** ESP-IDF can radio-complete bounded AWDL management
-  action frames without driver error. Raw unicast AWDL/IPv6 reached macOS and
-  populated its neighbor table. Current iPhone admission and reliable reverse
-  data-frame reception remain unknown.
+  action frames without driver error. Raw unicast AWDL/IPv6 reached macOS,
+  populated its neighbor table, and four Echo Requests reported radio success.
+  Current iPhone admission and reliable reverse data-frame reception remain
+  unknown.
 - **UNKNOWN:** sustainable bidirectional throughput under BLE coexistence and
   channel switching.
 - **UNKNOWN:** whether an infrastructure STA connection can coexist with AWDL.

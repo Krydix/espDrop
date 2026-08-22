@@ -61,10 +61,17 @@ TX_SUMMARY = re.compile(
     r"data_radio_completed=(?P<data_radio_completed>\d+) "
     r"data_radio_success=(?P<data_radio_success>\d+) "
     r"data_radio_failed=(?P<data_radio_failed>\d+) "
+    r"ns_radio_completed=(?P<ns_radio_completed>\d+) "
+    r"ns_radio_success=(?P<ns_radio_success>\d+) "
+    r"ns_radio_failed=(?P<ns_radio_failed>\d+) "
     r"echo_attempted=(?P<echo_attempted>\d+) "
     r"echo_accepted=(?P<echo_accepted>\d+) "
     r"echo_errors=(?P<echo_errors>\d+) "
     r"directed_reactions=(?P<directed_reactions>\d+) "
+    r"echo_radio_completed=(?P<echo_radio_completed>\d+) "
+    r"echo_radio_success=(?P<echo_radio_success>\d+) "
+    r"echo_radio_failed=(?P<echo_radio_failed>\d+) "
+    r"unknown_data_radio_completed=(?P<unknown_data_radio_completed>\d+) "
     r"neighbor_advertisements=(?P<neighbor_advertisements>\d+) "
     r"echo_replies=(?P<echo_replies>\d+)",
     re.IGNORECASE,

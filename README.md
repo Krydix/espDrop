@@ -31,8 +31,8 @@ cloud service.
   profile (disabled in normal and web-flasher builds)
 - host-tested AWDL/IPv6 Neighbor Solicitation framing; macOS accepted it and
   installed the ESP as a temporary `awdl0` IPv6 neighbor
-- host-tested directed ICMPv6 Echo Request framing and reply instrumentation
-  for the next reverse-path hardware gate
+- host-tested directed ICMPv6 Echo framing; four requests radio-completed
+  toward macOS, while reverse AWDL data decoding remains the active gate
 - bounded ephemeral BLE/AWDL/AirDrop peer model
 - TapDrop scoring based on timing, appearance, cross-layer observation, and
   RSSI
@@ -95,9 +95,9 @@ The active action-frame experiment is intentionally separate:
     make lab-awdl-tx-test PORT=/dev/cu.usbmodemXXXX DURATION=25
 
 It waits for a valid live MIF, transmits for at most 15 seconds, and records
-raw-API acceptance and radio completion for action frames plus bounded IPv6
-neighbor probes. This is a research target, not a general-purpose firmware
-image.
+raw-API acceptance plus separately classified radio completion for action
+frames, IPv6 Neighbor Solicitations, and Echo Requests. This is a research
+target, not a general-purpose firmware image.
 
 Serve `build/web-installer` over localhost or HTTPS. GitHub Pages deployment
 is defined in [pages.yml](.github/workflows/pages.yml).

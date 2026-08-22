@@ -47,6 +47,8 @@ These hashes are research provenance, not dependencies in release firmware.
 - [ ] Reproduce peer admission against the stock iPhone rather than the Mac.
 - [ ] Maintain channel-6 synchronization for 30 minutes.
 - [ ] Attach link-local IPv6 through an ESP-IDF netif.
+- [x] Radio-complete ICMPv6 Echo Requests ESP → Mac; 4/20 succeeded in the
+  classified bounded run, but no reply was observed.
 - [ ] ICMPv6 ESP → iPhone.
 - [ ] ICMPv6 iPhone → ESP.
 - [ ] mDNS multicast in both directions.
@@ -87,6 +89,12 @@ iPhone AWDL addresses afterward, but not the ESP address.
 `fe80::1edb:d4ff:fe42:3fa0%awdl0` mapped to the ESP MAC. Three of twenty raw
 unicast frames reported radio success. The entry was temporary and disappeared
 after the ESP lab session reset.
+
+**CONFIRMED:** during the classified Echo lab, 3/20 Neighbor Solicitations and
+4/20 Echo Requests radio-completed successfully. macOS showed the ESP neighbor
+in 53 independent polling samples. The ESP saw 147 raw data frames but decoded
+zero as AWDL data, so reverse IPv6 remains unproven and the receive decoder is
+the next investigation boundary.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.
