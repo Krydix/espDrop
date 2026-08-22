@@ -1,0 +1,110 @@
+name: Test firmware and deploy installer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run host tests
+        run: make test
+
+  firmware:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install ESP-IDF
+        uses: espressif/install-esp-idf-action@v1
+        with:
+          version: v5.4.1
+
+      - name: Build ESP32-S3 firmware
+        run: |
+          IDF_TARGET=esp32s3 idf.py \
+            -B build/esp32s3 \
+            -D SDKCONFIG=build/esp32s3/sdkconfig \
+            build
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: espdrop-esp32s3
+          if-no-files-found: error
+          path: |
+            build/esp32s3/flasher_args.json
+            build/esp32s3/project_description.json
+            build/esp32s3/*.bin
+            build/esp32s3/bootloader/*.bin
+            build/esp32s3/partition_table/*.bin
+
+  package:
+    needs: firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: espdrop-esp32s3
+          path: build/esp32s3
+
+      - name: Stage web installer
+        run: |
+          python3 scripts/stage_web_installer.py \
+            --build build/esp32s3 \
+            --output-dir build/web-installer
+
+      - name: Upload packaged installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: espdrop-web-installer
+          path: build/web-installer
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: build/web-installer
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: package
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

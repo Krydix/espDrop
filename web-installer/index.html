@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071019">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <title>espDrop — Web Installer</title>
+  <meta name="description" content="Install the espDrop research firmware on an ESP32-S3.">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root{color-scheme:dark;--bg:#071019;--card:#101d29;--line:#203445;--text:#f7fbff;--muted:#91a5b6;--cyan:#17c0ff;--violet:#8d7cff;--warning:#ffcc66}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#173e57 0,transparent 42%),var(--bg);color:var(--text);font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}.page{width:min(100% - 32px,760px);margin:auto;padding:max(22px,env(safe-area-inset-top)) 0 70px}.top{display:flex;justify-content:space-between;color:var(--muted);font-size:13px}.top strong{color:var(--text);font-size:16px}.hero{padding:76px 0 48px;text-align:center}.mark{position:relative;width:112px;height:112px;margin:0 auto 28px;border:1px solid #2e627f;border-radius:30px;background:linear-gradient(145deg,#102c3d,#131c36);box-shadow:0 22px 70px #0008}.mark svg{position:absolute;inset:22px;width:68px;height:68px}.hero h1{margin:0;font-size:clamp(44px,10vw,74px);line-height:.95;letter-spacing:-.06em}.hero h1 span{background:linear-gradient(90deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:570px;margin:20px auto 0;color:var(--muted);font-size:18px}.flow{display:flex;align-items:center;justify-content:center;gap:10px;margin:28px 0 0;color:#d9e7f2;font-size:14px}.flow b{padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:#0b1721}.flow i{color:var(--cyan);font-style:normal}.section{margin-bottom:24px}.eyebrow{margin:0 14px 8px;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}.card{overflow:hidden;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--card) 92%,transparent);box-shadow:0 12px 40px #0003}.row{display:flex;align-items:center;gap:13px;min-height:60px;padding:12px 16px}.row+.row{border-top:1px solid var(--line)}.icon{display:grid;flex:0 0 34px;width:34px;height:34px;place-items:center;border-radius:9px;background:#172d3d;color:var(--cyan)}.copy{min-width:0;flex:1}.label{display:block}.detail{display:block;color:var(--muted);font-size:13px}.value{color:var(--muted);font-size:14px;text-align:right}.install{padding:21px}.install h2{margin:0;font-size:24px;letter-spacing:-.03em}.install p{margin:7px 0 19px;color:var(--muted)}.button{width:100%;min-height:50px;border:0;border-radius:13px;background:linear-gradient(90deg,#008fcb,#6855df);color:#fff;font:650 17px -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer}.support{color:#ff7b76}.warning{margin:12px 0 0!important;color:var(--warning)!important;font-size:12px}.privacy{margin:38px 14px 0;color:var(--muted);font-size:12px;text-align:center}@media(max-width:520px){.hero{padding-top:54px}.flow{flex-wrap:wrap}.value{max-width:38%;font-size:12px}}
+  </style>
+</head>
+<body>
+<div class="page">
+  <header class="top"><strong>espDrop</strong><span>ESP32-S3 Web Installer</span></header>
+  <main>
+    <section class="hero">
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><path stroke="#17c0ff" d="M14 20a25 25 0 0 1 36 0M21 27a15 15 0 0 1 22 0"/><path stroke="#8d7cff" d="M32 33v21m0 0-9-9m9 9 9-9"/></svg></div>
+      <h1>AirDrop for <span>things.</span></h1>
+      <p>Install the open embedded AirDrop research stack. Local-first, no account, no cloud, no infrastructure Wi-Fi.</p>
+      <div class="flow"><b>NFC tap</b><i>→</i><b>AWDL</b><i>→</i><b>AirDrop</b></div>
+    </section>
+
+    <section class="section">
+      <h2 class="eyebrow">Build</h2>
+      <div class="card">
+        <div class="row"><span class="icon">S3</span><span class="copy"><span class="label">Hardware</span><span class="detail">Initial supported target</span></span><span class="value">ESP32-S3</span></div>
+        <div class="row"><span class="icon">↓</span><span class="copy"><span class="label">Firmware</span><span class="detail" id="buildDate">Loading build…</span></span><span class="value" id="version">Latest</span></div>
+        <div class="row"><span class="icon">⌁</span><span class="copy"><span class="label">Network</span><span class="detail">AWDL research path</span></span><span class="value">Local only</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="eyebrow">Install</h2>
+      <div class="card install">
+        <h2>Connect an ESP32-S3.</h2>
+        <p>Use desktop Chrome or Edge and select the board’s USB serial port.</p>
+        <esp-web-install-button manifest="./manifest.json">
+          <button class="button" slot="activate" type="button">Install espDrop</button>
+          <span slot="unsupported" class="support">Web Serial is unavailable. Open this page in desktop Chrome or Edge.</span>
+          <span slot="not-allowed" class="support">Web Serial requires HTTPS or localhost.</span>
+        </esp-web-install-button>
+        <p class="warning">Research firmware: the current build validates the core and TapDrop foundation; stock-iPhone transfer is not claimed yet.</p>
+      </div>
+    </section>
+    <p class="privacy">Flashing replaces the board’s existing firmware. espDrop does not require an account or Internet connection during operation.</p>
+  </main>
+</div>
+<script>
+  fetch('./build-info.json').then(r=>r.ok?r.json():Promise.reject()).then(info=>{
+    document.getElementById('version').textContent=info.version||'Latest';
+    if(info.builtAt){document.getElementById('buildDate').textContent='Built '+new Date(info.builtAt).toLocaleDateString(undefined,{dateStyle:'medium'})}
+  }).catch(()=>{document.getElementById('buildDate').textContent='Latest available build'});
+</script>
+</body>
+</html>

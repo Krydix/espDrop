@@ -1,0 +1,288 @@
+#include "espdrop/awdl_tx.h"
+
+#include <string.h>
+
+#define IEEE80211_HEADER_BYTES 24U
+#define AWDL_ACTION_HEADER_BYTES 16U
+#define AWDL_SYNC_VALUE_BYTES 73U
+#define AWDL_CHANNEL_VALUE_BYTES 41U
+#define AWDL_ELECTION_V1_VALUE_BYTES 21U
+#define AWDL_ELECTION_V2_VALUE_BYTES 40U
+#define AWDL_SERVICE_VALUE_BYTES 11U
+#define AWDL_HT_VALUE_BYTES 9U
+#define AWDL_DATA_PATH_VALUE_BYTES 15U
+#define AWDL_VERSION_VALUE_BYTES 2U
+#define AWDL_TU_US 1024ULL
+
+static const uint8_t broadcast[6] = {
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+};
+static const uint8_t awdl_bssid[6] = {
+    0x00, 0x25, 0x00, 0xff, 0x94, 0x73,
+};
+
+static void put_le16(uint8_t *output, uint16_t value)
+{
+    output[0] = (uint8_t)value;
+    output[1] = (uint8_t)(value >> 8U);
+}
+
+static void put_le32(uint8_t *output, uint32_t value)
+{
+    output[0] = (uint8_t)value;
+    output[1] = (uint8_t)(value >> 8U);
+    output[2] = (uint8_t)(value >> 16U);
+    output[3] = (uint8_t)(value >> 24U);
+}
+
+static bool mac_is_zero(const uint8_t address[6])
+{
+    static const uint8_t zero[6];
+    return memcmp(address, zero, sizeof(zero)) == 0;
+}
+
+static size_t bounded_string_length(const char *value, size_t maximum)
+{
+    size_t length = 0U;
+    while (length < maximum && value[length] != '\0') {
+        ++length;
+    }
+    return length;
+}
+
+static void make_channel_sequence(uint8_t *value, size_t padding, uint8_t channel)
+{
+    memset(value, 0, 38U + padding);
+    value[0] = 15U;
+    value[1] = 3U;
+    value[2] = 0U;
+    value[3] = 3U;
+    put_le16(value + 4, 0xffffU);
+    for (size_t index = 0; index < ESPDROP_AWDL_MAX_CHANNELS; ++index) {
+        value[6U + index * 2U] = channel;
+        value[7U + index * 2U] = 0x51U;
+    }
+}
+
+static uint8_t *append_tlv(uint8_t *output, uint8_t type, uint16_t length)
+{
+    output[0] = type;
+    put_le16(output + 1, length);
+    memset(output + 3, 0, length);
+    return output + 3;
+}
+
+bool espdrop_awdl_tx_state_from_mif(
+    espdrop_awdl_tx_state_t *state,
+    const uint8_t self[6],
+    const uint8_t source[6],
+    const char *name,
+    const espdrop_awdl_mif_t *mif,
+    uint64_t observation_us)
+{
+    if (state == NULL || self == NULL || source == NULL || name == NULL ||
+        mif == NULL || !mif->has_sync || !mif->has_election_v2 ||
+        mif->sync.aw_period_tu == 0U || mif->sync.presence_mode == 0U ||
+        mif->sync.presence_mode > ESPDROP_AWDL_MAX_CHANNELS ||
+        mac_is_zero(self) || mac_is_zero(mif->election_v2.master)) {
+        return false;
+    }
+
+    const uint32_t eaw_period_tu =
+        (uint32_t)mif->sync.aw_period_tu * mif->sync.presence_mode;
+    if (eaw_period_tu == 0U) {
+        return false;
+    }
+    const uint32_t down_tu = mif->sync.tx_down_counter % eaw_period_tu;
+    const uint32_t elapsed_in_eaw_tu =
+        down_tu == 0U ? 0U : eaw_period_tu - down_tu;
+    const uint64_t elapsed_us = (uint64_t)elapsed_in_eaw_tu * AWDL_TU_US;
+
+    memset(state, 0, sizeof(*state));
+    memcpy(state->self, self, sizeof(state->self));
+    memcpy(state->master, mif->election_v2.master, sizeof(state->master));
+    memcpy(state->sync_master, source, sizeof(state->sync_master));
+    (void)strncpy(state->name, name, sizeof(state->name) - 1U);
+    state->sync_reference_us = observation_us >= elapsed_us
+                                   ? observation_us - elapsed_us : 0U;
+    state->aw_sequence_base = (uint16_t)(
+        mif->sync.next_aw_sequence &
+        (uint16_t)~(mif->sync.presence_mode - 1U));
+    state->aw_period_tu = mif->sync.aw_period_tu;
+    state->action_frame_period_tu =
+        mif->sync.action_frame_period_tu == 0U
+            ? 110U : mif->sync.action_frame_period_tu;
+    state->presence_mode = mif->sync.presence_mode;
+    state->channel = mif->sync.master_channel == 0U
+                         ? 6U : mif->sync.master_channel;
+    state->distance_to_master =
+        mif->election_v2.distance_to_master + 1U;
+    state->master_metric = mif->election_v2.master_metric;
+    state->self_metric = mif->election_v2.master_metric > 1U
+                             ? mif->election_v2.master_metric - 1U : 0U;
+    state->master_counter = mif->election_v2.master_counter;
+    state->self_counter = 0U;
+    return true;
+}
+
+static bool state_is_valid(const espdrop_awdl_tx_state_t *state)
+{
+    return state != NULL && !mac_is_zero(state->self) &&
+           !mac_is_zero(state->master) && state->aw_period_tu != 0U &&
+           state->presence_mode != 0U &&
+           state->presence_mode <= ESPDROP_AWDL_MAX_CHANNELS &&
+           state->channel >= 1U && state->channel <= 13U;
+}
+
+espdrop_awdl_build_result_t espdrop_awdl_build_action(
+    uint8_t *frame,
+    size_t capacity,
+    size_t *length,
+    const espdrop_awdl_tx_state_t *state,
+    espdrop_awdl_action_subtype_t subtype,
+    uint64_t now_us,
+    uint16_t sequence_number)
+{
+    if (frame == NULL || length == NULL || state == NULL ||
+        (subtype != ESPDROP_AWDL_ACTION_PSF &&
+         subtype != ESPDROP_AWDL_ACTION_MIF)) {
+        return ESPDROP_AWDL_BUILD_INVALID_ARGUMENT;
+    }
+    if (!state_is_valid(state) || now_us < state->sync_reference_us) {
+        return ESPDROP_AWDL_BUILD_INVALID_STATE;
+    }
+
+    const size_t name_length =
+        bounded_string_length(state->name, sizeof(state->name));
+    const size_t arpa_value_length = 4U + name_length;
+    const size_t required = IEEE80211_HEADER_BYTES + AWDL_ACTION_HEADER_BYTES +
+        (3U + AWDL_SYNC_VALUE_BYTES) +
+        (3U + AWDL_ELECTION_V1_VALUE_BYTES) +
+        (3U + AWDL_CHANNEL_VALUE_BYTES) +
+        (3U + AWDL_ELECTION_V2_VALUE_BYTES) +
+        (3U + AWDL_SERVICE_VALUE_BYTES) +
+        (subtype == ESPDROP_AWDL_ACTION_MIF
+             ? (3U + AWDL_HT_VALUE_BYTES) + (3U + arpa_value_length) : 0U) +
+        (3U + AWDL_DATA_PATH_VALUE_BYTES) +
+        (3U + AWDL_VERSION_VALUE_BYTES);
+    if (capacity < required || required > ESPDROP_AWDL_TX_FRAME_CAPACITY) {
+        return ESPDROP_AWDL_BUILD_NO_SPACE;
+    }
+
+    memset(frame, 0, required);
+    frame[0] = 0xd0U;
+    memcpy(frame + 4, broadcast, sizeof(broadcast));
+    memcpy(frame + 10, state->self, sizeof(state->self));
+    memcpy(frame + 16, awdl_bssid, sizeof(awdl_bssid));
+    put_le16(frame + 22, (uint16_t)((sequence_number & 0x0fffU) << 4U));
+
+    uint8_t *action = frame + IEEE80211_HEADER_BYTES;
+    action[0] = 127U;
+    action[1] = 0x00U;
+    action[2] = 0x17U;
+    action[3] = 0xf2U;
+    action[4] = 8U;
+    action[5] = 0x10U;
+    action[6] = (uint8_t)subtype;
+    action[7] = 0U;
+    put_le32(action + 8, (uint32_t)now_us);
+    put_le32(action + 12, (uint32_t)now_us);
+
+    const uint64_t elapsed_tu =
+        (now_us - state->sync_reference_us) / AWDL_TU_US;
+    const uint32_t eaw_period_tu =
+        (uint32_t)state->aw_period_tu * state->presence_mode;
+    const uint32_t phase_tu = (uint32_t)(elapsed_tu % eaw_period_tu);
+    const uint16_t tx_down_tu = (uint16_t)(eaw_period_tu - phase_tu);
+    const uint32_t elapsed_eaws = (uint32_t)(elapsed_tu / eaw_period_tu);
+    const uint16_t current_aw = (uint16_t)(
+        state->aw_sequence_base + elapsed_eaws * state->presence_mode +
+        phase_tu / state->aw_period_tu);
+
+    uint8_t *cursor = action + AWDL_ACTION_HEADER_BYTES;
+    uint8_t *value = append_tlv(cursor, 4U, AWDL_SYNC_VALUE_BYTES);
+    value[0] = state->channel;
+    put_le16(value + 1, tx_down_tu);
+    value[3] = state->channel;
+    value[4] = 0U;
+    put_le16(value + 5, state->aw_period_tu);
+    put_le16(value + 7, state->action_frame_period_tu);
+    put_le16(value + 9, 0x1800U);
+    put_le16(value + 11, state->aw_period_tu);
+    put_le16(value + 13, state->aw_period_tu);
+    const uint32_t elapsed_current_eaw = eaw_period_tu - tx_down_tu;
+    put_le16(value + 15,
+             elapsed_current_eaw < state->aw_period_tu
+                 ? (uint16_t)(state->aw_period_tu - elapsed_current_eaw) : 0U);
+    value[17] = (uint8_t)(state->presence_mode - 1U);
+    value[18] = value[17];
+    value[19] = value[17];
+    value[20] = value[17];
+    memcpy(value + 21, state->master, sizeof(state->master));
+    value[27] = state->presence_mode;
+    put_le16(value + 29, current_aw);
+    put_le16(value + 31, current_aw);
+    make_channel_sequence(value + 33, 2U, state->channel);
+    cursor += 3U + AWDL_SYNC_VALUE_BYTES;
+
+    value = append_tlv(cursor, 5U, AWDL_ELECTION_V1_VALUE_BYTES);
+    value[3] = (uint8_t)(state->distance_to_master > UINT8_MAX
+                             ? UINT8_MAX : state->distance_to_master);
+    memcpy(value + 5, state->master, sizeof(state->master));
+    put_le32(value + 11, state->master_metric);
+    put_le32(value + 15, state->self_metric);
+    cursor += 3U + AWDL_ELECTION_V1_VALUE_BYTES;
+
+    value = append_tlv(cursor, 18U, AWDL_CHANNEL_VALUE_BYTES);
+    make_channel_sequence(value, 3U, state->channel);
+    cursor += 3U + AWDL_CHANNEL_VALUE_BYTES;
+
+    value = append_tlv(cursor, 24U, AWDL_ELECTION_V2_VALUE_BYTES);
+    memcpy(value, state->master, sizeof(state->master));
+    memcpy(value + 6, state->sync_master, sizeof(state->sync_master));
+    put_le32(value + 12, state->master_counter);
+    put_le32(value + 16, state->distance_to_master);
+    put_le32(value + 20, state->master_metric);
+    put_le32(value + 24, state->self_metric);
+    put_le32(value + 36, state->self_counter);
+    cursor += 3U + AWDL_ELECTION_V2_VALUE_BYTES;
+
+    value = append_tlv(cursor, 6U, AWDL_SERVICE_VALUE_BYTES);
+    cursor += 3U + AWDL_SERVICE_VALUE_BYTES;
+
+    if (subtype == ESPDROP_AWDL_ACTION_MIF) {
+        value = append_tlv(cursor, 7U, AWDL_HT_VALUE_BYTES);
+        value[2] = 0x6fU;
+        value[4] = 0x1fU;
+        value[5] = 0xffU;
+        value[6] = 0xffU;
+        cursor += 3U + AWDL_HT_VALUE_BYTES;
+
+        value = append_tlv(cursor, 16U, (uint16_t)arpa_value_length);
+        value[0] = 3U;
+        value[1] = (uint8_t)name_length;
+        memcpy(value + 2, state->name, name_length);
+        value[2U + name_length] = 0xc0U;
+        value[3U + name_length] = 0x0cU;
+        cursor += 3U + arpa_value_length;
+    }
+
+    value = append_tlv(cursor, 12U, AWDL_DATA_PATH_VALUE_BYTES);
+    put_le16(value, 0x8f24U);
+    value[2] = 'X';
+    value[3] = '0';
+    value[4] = 0U;
+    put_le16(value + 5, 0x0001U);
+    memcpy(value + 7, state->self, sizeof(state->self));
+    put_le16(value + 13, 0U);
+    cursor += 3U + AWDL_DATA_PATH_VALUE_BYTES;
+
+    value = append_tlv(cursor, 21U, AWDL_VERSION_VALUE_BYTES);
+    value[0] = 0xa0U;
+    value[1] = 1U;
+    cursor += 3U + AWDL_VERSION_VALUE_BYTES;
+
+    *length = (size_t)(cursor - frame);
+    return *length == required ? ESPDROP_AWDL_BUILD_OK
+                               : ESPDROP_AWDL_BUILD_INVALID_STATE;
+}

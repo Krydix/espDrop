@@ -1,0 +1,13 @@
+espDrop
+
+The initial architecture and build/provisioning workflow are based on the
+project conventions used by Krydix/ESPresso.
+
+The protocol documentation is informed by public research from the Open
+Wireless Link project and by inspection of the GPL-3.0 OpenDrop and OWL source
+trees. No GPL implementation code is included in the MIT-licensed components.
+
+archef2000/esp-owl is an important experimental ESP32-S3 reference. Its tree
+does not currently contain a repository-level license, although individual
+files carry GPL, MIT, Apache-2.0, and other notices. It is therefore kept out
+of release firmware until its redistribution boundary is clarified.

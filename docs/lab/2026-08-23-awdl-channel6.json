@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "startedAt": "2026-08-22T22:04:37+00:00",
+  "localDate": "2026-08-23",
+  "durationSeconds": 30,
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "firmware": "espDrop 0.1.0",
+    "channel": 6
+  },
+  "stimulus": "iPhone AirDrop Everyone for 10 Minutes with Photos share sheet open",
+  "finalDiagnostics": {
+    "managementFrames": 1691,
+    "actionFrames": 703,
+    "awdlBssidMatches": 703,
+    "vendorActionFrames": 703,
+    "appleOuiMatches": 703,
+    "decodedByLegacyVersionParser": 0,
+    "droppedRecords": 0
+  },
+  "observedHeader": {
+    "bssid": "00:25:00:ff:94:73",
+    "category": 127,
+    "oui": "00:17:f2",
+    "type": 8,
+    "versionByte": 16,
+    "versionHex": "0x10",
+    "versionMajor": 1,
+    "versionMinor": 0,
+    "subtypes": [0, 3]
+  },
+  "sampledPeers": [
+    {"source": "a6:ed:54:02:5b:4e", "rssi": -40},
+    {"source": "52:f4:36:b8:fd:f5", "rssi": -18},
+    {"source": "ea:33:2c:82:f5:7f", "rssi": -31}
+  ],
+  "interpretation": "Gate 1 receive is confirmed. The initial parser incorrectly treated the version byte as a scalar; 0x10 encodes AWDL protocol version 1.0 as major/minor nibbles.",
+  "postFixVerification": {
+    "startedAt": "2026-08-22T22:07:09+00:00",
+    "durationSeconds": 15,
+    "managementFramesAtLastDiagnostic": 726,
+    "decodedFramesAtLastDiagnostic": 278,
+    "highestDecodedCountLogged": 350,
+    "loggedPsfSamples": 14,
+    "loggedMifSamples": 3,
+    "uniqueSources": [
+      "52:f4:36:b8:fd:f5",
+      "a6:ed:54:02:5b:4e",
+      "ea:33:2c:82:f5:7f"
+    ],
+    "droppedRecords": 0,
+    "result": "Version-aware parser decoded current PSF and MIF traffic on hardware."
+  }
+}

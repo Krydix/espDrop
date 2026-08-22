@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "startedAt": "2026-08-22T22:18:02+00:00",
+  "localDate": "2026-08-23",
+  "durationSeconds": 12,
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "firmware": "espDrop 0.1.0",
+    "channel": 6,
+    "rawMifCaptureLimitBytes": 768
+  },
+  "finalDiagnostics": {
+    "managementFrames": 553,
+    "actionFrames": 183,
+    "decodedFrames": 183,
+    "droppedRecords": 0
+  },
+  "captures": [
+    {
+      "source": "a6:ed:54:02:5b:4e",
+      "frameLength": 491,
+      "sha256": "2a63cb4ab136e6b1e0f79260976ce3500e4b10c71a2cba0b0c6996012de28f43",
+      "parseResult": 0,
+      "tlvCount": 13,
+      "awPeriodTu": 16,
+      "actionFramePeriodTu": 110,
+      "presenceMode": 4,
+      "txDownCounterTu": 35,
+      "nextAwSequence": 64289,
+      "masterChannel": 6,
+      "master": "ea:33:2c:82:f5:7f",
+      "distanceToMaster": 1,
+      "masterMetric": 510,
+      "selfMetric": 510,
+      "masterCounter": 741,
+      "selfCounter": 398,
+      "channels": [44, 44, 44, 0, 0, 0, 0, 44, 6, 44, 44, 44, 0, 0, 0, 44]
+    },
+    {
+      "source": "ea:33:2c:82:f5:7f",
+      "frameLength": 528,
+      "sha256": "58b7f9b3de9e58c92c87de2492d14fd0a72e69f55da93a633868c4f640a18a88",
+      "parseResult": 0,
+      "tlvCount": 16,
+      "awPeriodTu": 16,
+      "actionFramePeriodTu": 110,
+      "presenceMode": 4,
+      "txDownCounterTu": 26,
+      "nextAwSequence": 64290,
+      "masterChannel": 6,
+      "master": "ea:33:2c:82:f5:7f",
+      "distanceToMaster": 0,
+      "masterMetric": 510,
+      "selfMetric": 510,
+      "masterCounter": 741,
+      "selfCounter": 741,
+      "channels": [0, 0, 44, 0, 0, 0, 0, 0, 6, 0, 44, 0, 0, 0, 0, 0]
+    }
+  ],
+  "fixture": {
+    "path": "tests/fixtures/awdl-mif-core.hex",
+    "bytes": 227,
+    "contents": "802.11 header, AWDL action header, and captured TLV types 4, 5, 18, and 24",
+    "sha256OfHexFile": "fadb20b96e14a550058c5fd263685515f1bae6fb8eda82b572bcf57c5aca8299"
+  },
+  "privacy": "Full service-response TLVs are retained only in the ignored local build artifact; the tracked fixture contains the four protocol-core TLVs needed for synchronization tests."
+}

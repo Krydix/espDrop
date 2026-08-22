@@ -1,0 +1,56 @@
+menu "espDrop"
+
+config ESPDROP_DEVICE_NAME
+    string "AirDrop device name"
+    default "espDrop"
+
+config ESPDROP_MAX_TRANSFER_BYTES
+    int "Maximum accepted transfer size"
+    range 1024 2147483647
+    default 67108864
+
+config ESPDROP_AWDL_PROBE
+    bool "Enable receive-only AWDL action-frame probe"
+    default y
+
+config ESPDROP_AWDL_PROBE_CHANNEL
+    int "AWDL probe channel"
+    depends on ESPDROP_AWDL_PROBE
+    range 1 13
+    default 6
+
+config ESPDROP_AWDL_TX_LAB
+    bool "Enable bounded AWDL action-frame transmit experiment"
+    depends on ESPDROP_AWDL_PROBE
+    default n
+    help
+        Research-only profile. After observing a valid MIF, transmit PSF/MIF
+        action frames for no more than 15 seconds. Normal and web-flasher
+        builds must leave this disabled.
+
+config TAPDROP_NFC_FIELD_GPIO
+    int "NFC field-detect GPIO (-1 disables hardware input)"
+    range -1 48
+    default -1
+
+config TAPDROP_NFC_ACTIVE_LEVEL
+    int "NFC field-detect active level"
+    range 0 1
+    default 1
+
+config TAPDROP_SESSION_WINDOW_MS
+    int "Tap correlation window (milliseconds)"
+    range 1000 60000
+    default 15000
+
+config TAPDROP_MINIMUM_SCORE
+    int "Minimum correlation score"
+    range 0 1000
+    default 450
+
+config TAPDROP_AMBIGUITY_MARGIN
+    int "Required score margin over second candidate"
+    range 0 1000
+    default 100
+
+endmenu
