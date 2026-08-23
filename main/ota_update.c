@@ -26,6 +26,9 @@
 #define OTA_CLOCK_MINIMUM 1704067200
 
 static const char *TAG = "espdrop_ota";
+static const char *OTA_NAMESPACE = "espdrop";
+static const char *OTA_PENDING_KEY = "ota_pending";
+static const char *OTA_URL_KEY = "ota_url";
 
 const char *ota_update_github_url(void)
 {
@@ -51,7 +54,7 @@ esp_err_t ota_update_is_pending(bool *pending)
     }
     *pending = false;
     nvs_handle_t nvs;
-    esp_err_t result = nvs_open("espdrop", NVS_READONLY, &nvs);
+    esp_err_t result = nvs_open(OTA_NAMESPACE, NVS_READONLY, &nvs);
     if (result == ESP_ERR_NVS_NOT_FOUND) {
         return ESP_OK;
     }
@@ -59,7 +62,7 @@ esp_err_t ota_update_is_pending(bool *pending)
         return result;
     }
     uint8_t value = 0;
-    result = nvs_get_u8(nvs, "ota_pending", &value);
+    result = nvs_get_u8(nvs, OTA_PENDING_KEY, &value);
     nvs_close(nvs);
     if (result == ESP_ERR_NVS_NOT_FOUND) {
         return ESP_OK;
@@ -70,12 +73,20 @@ esp_err_t ota_update_is_pending(bool *pending)
     return result;
 }
 
-static esp_err_t set_pending(uint8_t value)
+static esp_err_t write_request(uint8_t pending, const char *url)
 {
     nvs_handle_t nvs;
-    ESP_RETURN_ON_ERROR(nvs_open("espdrop", NVS_READWRITE, &nvs), TAG,
+    ESP_RETURN_ON_ERROR(nvs_open(OTA_NAMESPACE, NVS_READWRITE, &nvs), TAG,
                         "open OTA settings");
-    esp_err_t result = nvs_set_u8(nvs, "ota_pending", value);
+    esp_err_t result = nvs_set_u8(nvs, OTA_PENDING_KEY, pending);
+    if (result == ESP_OK && url != NULL) {
+        result = nvs_set_str(nvs, OTA_URL_KEY, url);
+    } else if (result == ESP_OK && pending == 0U) {
+        const esp_err_t erased = nvs_erase_key(nvs, OTA_URL_KEY);
+        if (erased != ESP_OK && erased != ESP_ERR_NVS_NOT_FOUND) {
+            result = erased;
+        }
+    }
     if (result == ESP_OK) {
         result = nvs_commit(nvs);
     }
@@ -85,15 +96,50 @@ static esp_err_t set_pending(uint8_t value)
 
 esp_err_t ota_update_request_github(void)
 {
+    return ota_update_request_url(ESPDROP_OTA_URL);
+}
+
+esp_err_t ota_update_request_url(const char *url)
+{
+    if (url == NULL || strlen(url) >= ESPDROP_OTA_URL_MAX ||
+        (strncmp(url, "https://", 8U) != 0 &&
+         strncmp(url, "http://", 7U) != 0)) {
+        return ESP_ERR_INVALID_ARG;
+    }
     bool configured = false;
     ESP_RETURN_ON_ERROR(wifi_provision_is_configured(&configured), TAG,
                         "read provisioning state");
     if (!configured) {
         return ESP_ERR_INVALID_STATE;
     }
-    ESP_RETURN_ON_ERROR(set_pending(1U), TAG, "arm OTA boot");
-    ESP_LOGW(TAG, "GitHub OTA armed for next boot: %s", ESPDROP_OTA_URL);
+    ESP_RETURN_ON_ERROR(write_request(1U, url), TAG, "arm OTA boot");
+    ESP_LOGW(TAG, "OTA armed for next boot: %s", url);
     return ESP_OK;
+}
+
+static esp_err_t read_request_url(char *url, size_t capacity)
+{
+    if (url == NULL || capacity == 0U) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    nvs_handle_t nvs;
+    esp_err_t result = nvs_open(OTA_NAMESPACE, NVS_READONLY, &nvs);
+    if (result == ESP_ERR_NVS_NOT_FOUND) {
+        result = ESP_ERR_NOT_FOUND;
+    } else if (result == ESP_OK) {
+        size_t length = capacity;
+        result = nvs_get_str(nvs, OTA_URL_KEY, url, &length);
+        nvs_close(nvs);
+    }
+    if (result == ESP_ERR_NVS_NOT_FOUND || result == ESP_ERR_NOT_FOUND) {
+        const size_t length = strlen(ESPDROP_OTA_URL);
+        if (length >= capacity) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+        memcpy(url, ESPDROP_OTA_URL, length + 1U);
+        return ESP_OK;
+    }
+    return result;
 }
 
 static esp_err_t synchronize_clock(void)
@@ -136,20 +182,27 @@ esp_err_t ota_update_apply_pending(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    char url[ESPDROP_OTA_URL_MAX];
+    ESP_RETURN_ON_ERROR(read_request_url(url, sizeof(url)), TAG,
+                        "read OTA URL");
+
     /* Consume the request before networking so a failed update cannot create a
      * reboot loop. A new request can always be sent over the physical USB link. */
-    ESP_RETURN_ON_ERROR(set_pending(0U), TAG, "consume OTA request");
+    ESP_RETURN_ON_ERROR(write_request(0U, NULL), TAG, "consume OTA request");
     ESP_LOGW(TAG, "OTA maintenance boot; normal AWDL radio is paused");
     ESP_RETURN_ON_ERROR(wifi_provision_start(), TAG,
                         "start maintenance Wi-Fi");
     ESP_RETURN_ON_ERROR(
         wifi_provision_wait_connected(OTA_CONNECT_TIMEOUT_MS), TAG,
         "connect maintenance Wi-Fi");
-    ESP_RETURN_ON_ERROR(synchronize_clock(), TAG, "synchronize clock");
+    const bool secure = strncmp(url, "https://", 8U) == 0;
+    if (secure) {
+        ESP_RETURN_ON_ERROR(synchronize_clock(), TAG, "synchronize clock");
+    }
 
     esp_http_client_config_t http_config = {
-        .url = ESPDROP_OTA_URL,
-        .crt_bundle_attach = esp_crt_bundle_attach,
+        .url = url,
+        .crt_bundle_attach = secure ? esp_crt_bundle_attach : NULL,
         .timeout_ms = 20000,
         .keep_alive_enable = true,
         .buffer_size = 4096,
@@ -158,7 +211,7 @@ esp_err_t ota_update_apply_pending(void)
         .http_config = &http_config,
     };
     esp_https_ota_handle_t handle = NULL;
-    ESP_LOGI(TAG, "checking %s", ESPDROP_OTA_URL);
+    ESP_LOGI(TAG, "checking %s", url);
     esp_err_t result = esp_https_ota_begin(&ota_config, &handle);
     if (result != ESP_OK) {
         return result;
@@ -175,7 +228,7 @@ esp_err_t ota_update_apply_pending(void)
     }
 
     const esp_app_desc_t *running = esp_app_get_description();
-    if (strcmp(next.version, running->version) == 0) {
+    if (secure && strcmp(next.version, running->version) == 0) {
         ESP_LOGI(TAG, "already running published version %s", running->version);
         esp_https_ota_abort(handle);
         return ESP_ERR_NOT_FOUND;

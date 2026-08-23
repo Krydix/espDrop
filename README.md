@@ -126,6 +126,12 @@ After CI publishes a newer `main` build to GitHub Pages, trigger an update:
 
     make ota-trigger PORT=/dev/cu.usbmodemXXXX
 
+For the development loop, build locally and serve the app image directly from
+the Mac over the provisioned maintenance network. The required serial/MAC guard
+prevents an adjacent serial device from being selected accidentally:
+
+    make ota-local PORT=/dev/cu.usbmodemXXXX ESP_SERIAL=AA:BB:CC:DD:EE:FF
+
 The physical USB command writes a one-shot maintenance flag and restarts. The
 device connects using its saved credentials, synchronizes its clock, downloads
 `firmware/esp32s3/espdrop.bin` over certificate-verified HTTPS, rejects images

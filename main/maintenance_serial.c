@@ -36,7 +36,7 @@
 #define PROVISION_TIMEOUT_MS 30000U
 
 static const char *TAG = "espdrop_serial";
-static const uint8_t ota_command[] = "ESPDROP OTA\n";
+static const char ota_command[] = "ESPDROP OTA";
 static bool allow_provisioning;
 
 static esp_err_t serial_write(const void *data, size_t length)
@@ -192,12 +192,16 @@ static void handle_rpc(const improv_serial_packet_t *packet)
     }
 }
 
-static void arm_ota_and_restart(void)
+static void arm_ota_and_restart(const char *url)
 {
-    const esp_err_t result = ota_update_request_github();
+    const esp_err_t result = url != NULL
+                                 ? ota_update_request_url(url)
+                                 : ota_update_request_github();
     const char *response = result == ESP_OK
                                ? "ESPDROP-OTA-ARMED\n"
-                               : "ESPDROP-OTA-NOT-PROVISIONED\n";
+                               : result == ESP_ERR_INVALID_STATE
+                                     ? "ESPDROP-OTA-NOT-PROVISIONED\n"
+                                     : "ESPDROP-OTA-INVALID-URL\n";
     ESP_ERROR_CHECK_WITHOUT_ABORT(serial_write(response, strlen(response)));
     if (result == ESP_OK) {
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -210,7 +214,8 @@ static void serial_task(void *context)
     (void)context;
     improv_serial_parser_t parser = {0};
     improv_serial_packet_t packet;
-    size_t ota_match = 0U;
+    char ota_line[sizeof(ota_command) + ESPDROP_OTA_URL_MAX + 1U];
+    size_t ota_length = 0U;
     uint8_t input[64];
     while (true) {
         const int received = usb_serial_jtag_read_bytes(
@@ -225,14 +230,37 @@ static void serial_task(void *context)
                 send_error(IMPROV_ERROR_INVALID_RPC);
             }
 
-            if (byte == ota_command[ota_match]) {
-                ++ota_match;
-                if (ota_match == sizeof(ota_command) - 1U) {
-                    ota_match = 0U;
-                    arm_ota_and_restart();
+            if (ota_length == 0U) {
+                if (byte == (uint8_t)ota_command[0]) {
+                    ota_line[ota_length++] = (char)byte;
                 }
-            } else {
-                ota_match = byte == ota_command[0] ? 1U : 0U;
+                continue;
+            }
+            if (byte == '\n') {
+                ota_line[ota_length] = '\0';
+                const size_t command_length = sizeof(ota_command) - 1U;
+                if (strcmp(ota_line, ota_command) == 0) {
+                    arm_ota_and_restart(NULL);
+                } else if (ota_length > command_length + 1U &&
+                           memcmp(ota_line, ota_command, command_length) == 0 &&
+                           ota_line[command_length] == ' ') {
+                    arm_ota_and_restart(&ota_line[command_length + 1U]);
+                }
+                ota_length = 0U;
+                continue;
+            }
+            if (byte < 0x20U || byte > 0x7eU ||
+                ota_length + 1U >= sizeof(ota_line)) {
+                ota_length = 0U;
+                continue;
+            }
+            ota_line[ota_length++] = (char)byte;
+            if (ota_length <= sizeof(ota_command) - 1U &&
+                ota_line[ota_length - 1U] != ota_command[ota_length - 1U]) {
+                ota_length = byte == (uint8_t)ota_command[0] ? 1U : 0U;
+                if (ota_length == 1U) {
+                    ota_line[0] = (char)byte;
+                }
             }
         }
     }

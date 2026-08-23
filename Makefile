@@ -6,6 +6,9 @@ IDF_PATH ?= $(HOME)/esp/esp-idf
 IDF_PYTHON_ENV_PATH ?= $(firstword $(wildcard $(HOME)/.espressif/python_env/idf5.4*_env))
 PORT ?=
 DURATION ?= 30
+ESP_SERIAL ?=
+OTA_HOST ?=
+OTA_PORT ?= 0
 WEB_INSTALLER_DIR ?= $(ROOT_DIR)/build/web-installer
 LAB_BUILD_DIR ?= $(ROOT_DIR)/build/$(TARGET)-awdl-tx-lab
 LAB_SDKCONFIG ?= $(LAB_BUILD_DIR)/sdkconfig
@@ -22,7 +25,7 @@ define run_idf
 			-D SDKCONFIG="$(SDKCONFIG)" $(1)'
 endef
 
-.PHONY: help build reconfigure clean fullclean flash monitor flash-monitor ports size test test-hardware-awdl web-installer provision-wifi ota-trigger lab-awdl-tx-build lab-awdl-tx-flash lab-awdl-tx-test
+.PHONY: help build reconfigure clean fullclean flash monitor flash-monitor ports size test test-hardware-awdl web-installer provision-wifi ota-trigger ota-local lab-awdl-tx-build lab-awdl-tx-flash lab-awdl-tx-test
 
 help:
 	@printf '%s\n' \
@@ -39,6 +42,7 @@ help:
 		'  make web-installer         Stage the GitHub Pages web flasher' \
 		'  make provision-wifi PORT=...  Securely provision OTA Wi-Fi over USB' \
 		'  make ota-trigger PORT=...     Ask firmware to install GitHub Pages build' \
+		'  make ota-local PORT=... ESP_SERIAL=...  Build and serve a LAN OTA image' \
 		'  make size                  Show firmware size information'
 
 build:
@@ -127,6 +131,16 @@ provision-wifi:
 ota-trigger:
 	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
 	@python3 "$(ROOT_DIR)/scripts/trigger_ota.py" --port "$(PORT)"
+
+ota-local: build
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@python3 "$(ROOT_DIR)/scripts/local_ota.py" \
+		--port "$(PORT)" \
+		--expected-serial "$(ESP_SERIAL)" \
+		--firmware "$(BUILD_DIR)/espdrop.bin" \
+		$(if $(OTA_HOST),--host "$(OTA_HOST)",) \
+		--listen-port "$(OTA_PORT)"
 
 test-hardware-awdl:
 	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }

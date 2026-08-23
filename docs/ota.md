@@ -27,7 +27,7 @@ complete USB flash. Application-only updates cannot change a partition table.
 
 `OTA maintenance`
 : Consumes the request before networking, joins the saved network, validates
-  time for TLS, and fetches the target app image from GitHub Pages. It either
+  time for TLS when required, and fetches the requested target app image. It either
   installs a different version or returns to normal mode after a bounded
   failure. Consuming the request first prevents a bad network from causing a
   reboot loop.
@@ -35,6 +35,8 @@ complete USB flash. Application-only updates cannot change a partition table.
 ## Trust and recovery
 
 - HTTPS certificate verification uses ESP-IDF's common CA bundle.
+- Local HTTP is accepted only when its one-shot URL arrives through the physical
+  USB maintenance command; it is intended for the same-LAN development loop.
 - The downloaded ESP app descriptor must name the `espdrop` project.
 - ESP-IDF validates the image and target before selecting the inactive slot.
 - Bootloader rollback remains armed until the new app initializes espDrop,
@@ -55,3 +57,10 @@ maintenance mode, joined the saved network, downloaded the certificate-verified
 GitHub Pages image, moved from `ota_0` at `0x20000` to `ota_1` at `0x320000`,
 and booted version `0.1.0-e5a941a`. A subsequent restart remained on `ota_1`,
 confirming the healthy-start path canceled pending rollback.
+
+The same target, USB serial/MAC `1C:DB:D4:42:3F:A0`, also accepted a one-shot
+local URL, joined its saved LAN, fetched the 895,264-byte app image directly
+from the development Mac at `10.100.14.50`, installed it into the inactive OTA
+slot, and returned to normal AWDL mode. The local command verifies the selected
+USB device against an explicitly supplied serial/MAC before serving or arming
+the update.
