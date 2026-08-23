@@ -154,6 +154,43 @@ int main(void)
     assert(!espdrop_awdl_build_echo_request(
         echo, sizeof(echo) - 1U, &length, self, target, 0, 0, 0, 0));
 
+    uint8_t ethernet[ESPDROP_ETHERNET_HEADER_BYTES + 40U] = {0};
+    const uint8_t mdns_multicast[6] = {0x33, 0x33, 0, 0, 0, 0xfb};
+    memcpy(ethernet, mdns_multicast, 6U);
+    memcpy(ethernet + 6, self, 6U);
+    ethernet[12] = 0x86U;
+    ethernet[13] = 0xddU;
+    ethernet[14] = 0x60U;
+    ethernet[20] = 17U;
+    ethernet[21] = 255U;
+
+    uint8_t generic[128];
+    assert(espdrop_awdl_build_ethernet_frame(
+        generic, sizeof(generic), &length, ethernet, sizeof(ethernet), self,
+        0x234U, 0x8abcU));
+    assert(length == ESPDROP_AWDL_DATA_FRAME_OVERHEAD + 40U);
+    assert(memcmp(generic + 4, mdns_multicast, 6U) == 0);
+    assert(memcmp(generic + 10, self, 6U) == 0);
+    assert(generic[22] == 0x40U && generic[23] == 0x23U);
+    assert(espdrop_awdl_decode_data(generic, length, &data));
+    assert(data.sequence == 0x8abcU);
+    assert(data.ethertype == 0x86ddU);
+    assert(data.payload_length == 40U);
+
+    uint8_t decoded_ethernet[sizeof(ethernet)];
+    size_t decoded_ethernet_length = 0U;
+    assert(espdrop_awdl_data_to_ethernet(
+        &data, decoded_ethernet, sizeof(decoded_ethernet),
+        &decoded_ethernet_length));
+    assert(decoded_ethernet_length == sizeof(ethernet));
+    assert(memcmp(decoded_ethernet, ethernet, sizeof(ethernet)) == 0);
+    assert(!espdrop_awdl_build_ethernet_frame(
+        generic, sizeof(generic), &length, ethernet,
+        ESPDROP_ETHERNET_HEADER_BYTES - 1U, self, 0, 0));
+    assert(!espdrop_awdl_data_to_ethernet(
+        &data, decoded_ethernet, sizeof(decoded_ethernet) - 1U,
+        &decoded_ethernet_length));
+
     puts("AWDL data tests passed");
     return 0;
 }

@@ -80,7 +80,19 @@ TX_SUMMARY = re.compile(
     r"echo_radio_failed=(?P<echo_radio_failed>\d+) "
     r"unknown_data_radio_completed=(?P<unknown_data_radio_completed>\d+) "
     r"neighbor_advertisements=(?P<neighbor_advertisements>\d+) "
-    r"echo_replies=(?P<echo_replies>\d+)",
+    r"echo_replies=(?P<echo_replies>\d+) "
+    r"netif_tx_observed=(?P<netif_tx_observed>\d+) "
+    r"netif_tx_enqueued=(?P<netif_tx_enqueued>\d+) "
+    r"netif_tx_submitted=(?P<netif_tx_submitted>\d+) "
+    r"netif_tx_accepted=(?P<netif_tx_accepted>\d+) "
+    r"netif_tx_radio_success=(?P<netif_tx_radio_success>\d+) "
+    r"netif_tx_radio_failed=(?P<netif_tx_radio_failed>\d+) "
+    r"netif_rx_enqueued=(?P<netif_rx_enqueued>\d+) "
+    r"netif_rx_injected=(?P<netif_rx_injected>\d+) "
+    r"netif_rx_dropped=(?P<netif_rx_dropped>\d+) "
+    r"mdns_queries=(?P<mdns_queries>\d+) "
+    r"mdns_packets=(?P<mdns_packets>\d+) "
+    r"mdns_responses=(?P<mdns_responses>\d+)",
     re.IGNORECASE,
 )
 
@@ -145,6 +157,39 @@ TX_REACTION = re.compile(
     re.IGNORECASE,
 )
 
+NETIF_READY = re.compile(
+    r"AWDL-NETIF ready if=(?P<interface>\d+) "
+    r"ipv6=(?P<ipv6>[^ ]+) mtu=(?P<mtu>\d+)",
+    re.IGNORECASE,
+)
+
+NETIF_TX = re.compile(
+    r"AWDL-NETIF-TX bytes=(?P<bytes>\d+) "
+    r"ethertype=(?P<ethertype>0x[0-9a-f]+) "
+    r"driver=(?P<driver>[A-Z0-9_]+) count=(?P<count>\d+)",
+    re.IGNORECASE,
+)
+
+MDNS_QUERY = re.compile(
+    r"AWDL-MDNS-QUERY attempt=(?P<attempt>\d+) "
+    r"bytes=(?P<bytes>-?\d+) error=(?P<error>\d+)",
+    re.IGNORECASE,
+)
+
+MDNS_RX = re.compile(
+    r"AWDL-MDNS-RX bytes=(?P<bytes>\d+) response=(?P<response>\d+) "
+    r"qd=(?P<questions>\d+) an=(?P<answers>\d+) "
+    r"ns=(?P<authority>\d+) ar=(?P<additional>\d+) "
+    r"count=(?P<count>\d+)",
+    re.IGNORECASE,
+)
+
+MDNS_SUMMARY = re.compile(
+    r"AWDL-MDNS-SUMMARY queries=(?P<queries>\d+) "
+    r"packets=(?P<packets>\d+) responses=(?P<responses>\d+)",
+    re.IGNORECASE,
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -176,6 +221,11 @@ def main() -> None:
     awdl_data_frames = []
     awdl_data_diagnostics = []
     raw_data_captures = []
+    netif_ready = None
+    netif_tx = []
+    mdns_queries = []
+    mdns_packets = []
+    mdns_summary = None
     boot_lines = []
     with serial.Serial(args.port, 115200, timeout=0.25) as connection:
         connection.dtr = False
@@ -289,6 +339,35 @@ def main() -> None:
                     capture["frame_control"], 16
                 )
                 raw_data_captures.append(capture)
+            netif_ready_match = NETIF_READY.search(line)
+            if netif_ready_match:
+                netif_ready = netif_ready_match.groupdict()
+                netif_ready["interface"] = int(netif_ready["interface"])
+                netif_ready["mtu"] = int(netif_ready["mtu"])
+            netif_tx_match = NETIF_TX.search(line)
+            if netif_tx_match:
+                record = netif_tx_match.groupdict()
+                for key in ("bytes", "count"):
+                    record[key] = int(record[key])
+                netif_tx.append(record)
+            mdns_query_match = MDNS_QUERY.search(line)
+            if mdns_query_match:
+                mdns_queries.append({
+                    key: int(value)
+                    for key, value in mdns_query_match.groupdict().items()
+                })
+            mdns_rx_match = MDNS_RX.search(line)
+            if mdns_rx_match:
+                mdns_packets.append({
+                    key: int(value)
+                    for key, value in mdns_rx_match.groupdict().items()
+                })
+            mdns_summary_match = MDNS_SUMMARY.search(line)
+            if mdns_summary_match:
+                mdns_summary = {
+                    key: int(value)
+                    for key, value in mdns_summary_match.groupdict().items()
+                }
 
     unique_sources = sorted({item["source"] for item in frames})
     raw_captures = []
@@ -339,6 +418,13 @@ def main() -> None:
                 awdl_data_diagnostics[-1]
                 if awdl_data_diagnostics else None
             ),
+        },
+        "awdlNetif": {
+            "ready": netif_ready,
+            "transmittedFrames": netif_tx,
+            "mdnsQueries": mdns_queries,
+            "mdnsPackets": mdns_packets,
+            "mdnsSummary": mdns_summary,
         },
         "bootLogPrefix": boot_lines,
     }

@@ -1,6 +1,7 @@
 #include "espdrop/awdl_probe.h"
 #include "espdrop/awdl_frame.h"
 #include "espdrop/awdl_data.h"
+#include "espdrop/awdl_netif.h"
 #include "espdrop/awdl_tlv.h"
 #include "espdrop/awdl_tx_lab.h"
 #include "espdrop/espdrop.h"
@@ -174,6 +175,7 @@ static void promiscuous_data_rx(const wifi_promiscuous_pkt_t *packet)
     }
 
     ++decoded_data_frames;
+    (void)espdrop_awdl_netif_receive(&data);
     awdl_data_record_t record = {
         .rssi = packet->rx_ctrl.rssi,
         .channel = packet->rx_ctrl.channel,
@@ -696,6 +698,10 @@ esp_err_t espdrop_awdl_probe_start(uint8_t channel)
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start Wi-Fi");
     ESP_RETURN_ON_ERROR(esp_wifi_get_mac(WIFI_IF_STA, station_mac), TAG,
                         "read station MAC");
+    if (CONFIG_ESPDROP_AWDL_NETIF) {
+        ESP_RETURN_ON_ERROR(espdrop_awdl_netif_init(station_mac), TAG,
+                            "initialize AWDL esp-netif");
+    }
     ESP_RETURN_ON_ERROR(
         espdrop_awdl_tx_lab_init(CONFIG_ESPDROP_DEVICE_NAME), TAG,
         "initialize bounded transmit lab");

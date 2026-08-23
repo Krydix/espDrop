@@ -10,6 +10,8 @@ extern "C" {
 
 #define ESPDROP_AWDL_NS_FRAME_BYTES 112U
 #define ESPDROP_AWDL_ECHO_FRAME_BYTES 96U
+#define ESPDROP_AWDL_DATA_FRAME_OVERHEAD 40U
+#define ESPDROP_ETHERNET_HEADER_BYTES 14U
 
 typedef struct {
     uint8_t destination[6];
@@ -72,6 +74,16 @@ bool espdrop_awdl_build_echo_request(
     uint16_t identifier,
     uint16_t echo_sequence);
 
+bool espdrop_awdl_build_ethernet_frame(
+    uint8_t *frame,
+    size_t capacity,
+    size_t *length,
+    const uint8_t *ethernet,
+    size_t ethernet_length,
+    const uint8_t self_mac[6],
+    uint16_t ieee80211_sequence,
+    uint16_t awdl_sequence);
+
 bool espdrop_awdl_decode_data(
     const uint8_t *frame,
     size_t length,
@@ -85,6 +97,12 @@ espdrop_awdl_data_decode_result_t espdrop_awdl_decode_data_ex(
 bool espdrop_awdl_decode_ipv6(
     const espdrop_awdl_data_t *data,
     espdrop_awdl_ipv6_t *ipv6);
+
+bool espdrop_awdl_data_to_ethernet(
+    const espdrop_awdl_data_t *data,
+    uint8_t *ethernet,
+    size_t capacity,
+    size_t *length);
 
 #ifdef __cplusplus
 }

@@ -28,4 +28,8 @@ set(EXTRA_COMPONENT_DIRS
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(DEPENDENCIES_LOCK dependencies.lock.esp32s3)
+# lwIP's default pool of four MLD groups is consumed by its loopback and the
+# AWDL link-local solicited-node memberships. Keep explicit capacity for mDNS
+# (ff02::fb) and future AirDrop service groups on the second IPv6 interface.
+idf_build_set_property(COMPILE_DEFINITIONS "MEMP_NUM_MLD6_GROUP=8" APPEND)
 project(espdrop)

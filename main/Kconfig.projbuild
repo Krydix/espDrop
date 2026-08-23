@@ -28,6 +28,23 @@ config ESPDROP_AWDL_TX_LAB
         action frames plus bounded IPv6 neighbor and echo probes for no more
         than 15 seconds. Normal and web-flasher builds must leave this disabled.
 
+config ESPDROP_AWDL_NETIF
+    bool "Attach decoded AWDL IPv6 to an ESP-IDF network interface"
+    depends on ESPDROP_AWDL_PROBE
+    default y
+    help
+        Creates an Ethernet-shaped esp-netif for lwIP and feeds it decoded
+        AWDL frames. Normal firmware suppresses all packets lwIP asks the
+        driver to transmit; radio output remains restricted to a lab profile.
+
+config ESPDROP_AWDL_MDNS_LAB
+    bool "Run bounded IPv6 mDNS query through the AWDL netif"
+    depends on ESPDROP_AWDL_NETIF && ESPDROP_AWDL_TX_LAB
+    default n
+    help
+        Joins ff02::fb on the AWDL interface and sends six PTR queries for
+        _airdrop._tcp.local. Only use in the bounded transmit lab.
+
 config TAPDROP_NFC_FIELD_GPIO
     int "NFC field-detect GPIO (-1 disables hardware input)"
     range -1 48

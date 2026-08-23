@@ -48,14 +48,18 @@ These hashes are research provenance, not dependencies in release firmware.
   its 16-slot channel sequence verbatim, the iPhone returned a Neighbor
   Advertisement and matching Echo Reply directly to the ESP MAC.
 - [ ] Maintain channel-6 synchronization for 30 minutes.
-- [ ] Attach the proven raw link-local IPv6 path through an ESP-IDF netif.
+- [x] Attach the proven raw link-local IPv6 path through an ESP-IDF netif; a
+  bounded run assigned the correct link-local address, transmitted 14/14
+  queued frames, and injected 4/4 decoded peer frames without drops.
 - [x] Radio-complete ICMPv6 Echo Requests ESP → Mac; 4/20 succeeded in the
   first classified bounded run and 14/14 succeeded after channel-window
   scheduling, but no reply was observed in those pinned-sequence runs.
 - [x] ICMPv6 ESP → iPhone; a bounded run received the matching type-129 Echo
   Reply after advertising the iPhone's observed sequence verbatim.
 - [ ] ICMPv6 iPhone → ESP.
-- [ ] mDNS multicast in both directions.
+- [x] mDNS multicast in both directions; an ESP-IDF UDP/5353 socket sent six
+  `_airdrop._tcp.local` PTR queries and received four DNS responses from two
+  Apple AWDL peers through the custom netif.
 - [ ] Record loss, schedule drift, heap high-water mark, and watchdog status.
 
 ## M2/M3 — AirDrop
@@ -102,8 +106,10 @@ The ESP observed no data frame addressed to itself or carrying the AWDL BSSID,
 so the reverse decoder was not hiding a reply. A following run found the
 admission boundary: advertising the peer's channel sequence verbatim produced
 one directed Neighbor Advertisement and one matching Echo Reply from the stock
-iPhone. Raw bidirectional IPv6 is now proven; ESP-IDF netif integration and
-mDNS are next.
+iPhone. The next bounded run attached that path to an ESP-IDF netif: a real
+UDP/5353 socket sent six AirDrop PTR queries and received four DNS responses
+from two Apple peers. Raw bidirectional IPv6 and socket-level mDNS are now
+proven; DNS-SD record interpretation and endurance are next.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "startedAt": "2026-08-23T01:47:33+00:00",
+  "localDate": "2026-08-23",
+  "durationSeconds": 32,
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "ipv6LinkLocal": "fe80::1edb:d4ff:fe42:3fa0",
+    "channel": 6,
+    "interfaceIndex": 2,
+    "mtu": 1460,
+    "profile": "CONFIG_ESPDROP_AWDL_TX_LAB=y, CONFIG_ESPDROP_AWDL_MDNS_LAB=y",
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "socket": {
+    "family": "AF_INET6",
+    "type": "SOCK_DGRAM",
+    "boundPort": 5353,
+    "multicastGroup": "ff02::fb",
+    "hopLimit": 255,
+    "query": {
+      "name": "_airdrop._tcp.local",
+      "type": "PTR",
+      "unicastResponseBit": true,
+      "attempts": 6,
+      "bytesPerQuery": 37,
+      "sendErrors": 0
+    }
+  },
+  "transmit": {
+    "scheduledChannel6Windows": 14,
+    "measuredLatenessMicroseconds": {
+      "minimum": 1,
+      "maximum": 2
+    },
+    "actionFrames": {
+      "radioSuccess": 14,
+      "radioFailed": 0
+    },
+    "netifFrames": {
+      "observed": 15,
+      "enqueued": 15,
+      "submittedWithinWindow": 14,
+      "radioSuccess": 14,
+      "radioFailed": 0
+    }
+  },
+  "receive": {
+    "rawAwdlIpv6Frames": 4,
+    "netifEnqueued": 4,
+    "netifInjected": 4,
+    "netifDropped": 0,
+    "socketPackets": 4,
+    "dnsResponses": 4,
+    "packetBytes": 197,
+    "dnsHeader": {
+      "questions": 0,
+      "answers": 1,
+      "authority": 0,
+      "additional": 5
+    },
+    "sources": [
+      "ea:33:2c:82:f5:7f",
+      "a6:ed:54:02:5b:4e"
+    ],
+    "destination": "33:33:00:00:00:fb"
+  },
+  "result": {
+    "confirmed": "A real ESP-IDF IPv6 UDP socket sent AirDrop DNS-SD queries over the AWDL wrapper and received four Apple multicast DNS responses through the raw decoder and custom netif. This proves bounded bidirectional UDP/5353 through lwIP on ESP32-S3.",
+    "notConfirmed": "The response records have not yet been interpreted into AirDrop receiver objects, no HTTPS AirDrop endpoint is implemented, and 30-minute schedule endurance remains untested.",
+    "nextFocus": "Parse PTR/SRV/TXT/AAAA records from the socket responses and expose discovered AirDrop receivers to the core peer table."
+  }
+}

@@ -37,8 +37,10 @@ The AWDL milestone is deliberately split:
    both directions.
 6. **COMPLETE:** pass an ICMPv6 Echo Request/Reply round trip with a stock
    iPhone.
-7. Attach the proven frame path to an ESP-IDF netif.
-8. Pass UDP multicast on port 5353 in both directions.
+7. **COMPLETE FOR A BOUNDED RUN:** attach the proven frame path to an ESP-IDF
+   netif.
+8. **COMPLETE FOR A BOUNDED RUN:** pass UDP multicast on port 5353 in both
+   directions.
 9. Run for 30 minutes without schedule drift, watchdog reset, or peer loss.
 
 M1 is reached only at gate 6. AirDrop work starts after gate 7.
@@ -175,6 +177,27 @@ iPhone and ESP32-S3 and completes the raw-link M1 proof criterion. Production
 netif integration, bidirectional mDNS, and endurance remain separate gates.
 Compact evidence is preserved in
 [`lab/2026-08-23-awdl-verbatim-sequence.json`](lab/2026-08-23-awdl-verbatim-sequence.json).
+
+## First ESP-IDF netif and mDNS result
+
+**CONFIRMED on 2026-08-23:** the raw AWDL data path is attached to a dedicated
+Ethernet-shaped ESP-IDF netif with MTU 1460 and the ESP's derived link-local
+address `fe80::1edb:d4ff:fe42:3fa0`. lwIP-originated Ethernet frames are
+wrapped in Apple AWDL SNAP/data headers only inside synchronized channel-6
+windows; decoded peer frames are reconstructed as Ethernet and passed to
+`esp_netif_receive()`.
+
+A real IPv6 UDP socket bound to port 5353 sent six 37-byte DNS-SD PTR queries
+for `_airdrop._tcp.local`. Four 197-byte multicast responses from two Apple
+AWDL peers crossed the raw decoder into the netif and were delivered to that
+same socket. Each response had one answer and five additional records. The
+bounded run radio-completed 14/14 queued netif frames and injected 4/4 inbound
+frames with zero drops or resets.
+
+This completes gates 7 and 8 for a bounded run. It proves transport through
+the ordinary socket API, not yet AirDrop receiver discovery semantics,
+long-duration synchronization, or file transfer. Compact evidence is in
+[`lab/2026-08-23-awdl-netif-mdns.json`](lab/2026-08-23-awdl-netif-mdns.json).
 
 ## Timing model
 

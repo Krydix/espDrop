@@ -214,6 +214,50 @@ bool espdrop_awdl_build_echo_request(
     return true;
 }
 
+bool espdrop_awdl_build_ethernet_frame(
+    uint8_t *frame,
+    size_t capacity,
+    size_t *length,
+    const uint8_t *ethernet,
+    size_t ethernet_length,
+    const uint8_t self_mac[6],
+    uint16_t ieee80211_sequence,
+    uint16_t awdl_sequence)
+{
+    if (frame == NULL || length == NULL || ethernet == NULL ||
+        self_mac == NULL || ethernet_length < ESPDROP_ETHERNET_HEADER_BYTES) {
+        return false;
+    }
+    const size_t payload_length =
+        ethernet_length - ESPDROP_ETHERNET_HEADER_BYTES;
+    const size_t frame_length = ESPDROP_AWDL_DATA_FRAME_OVERHEAD +
+                                payload_length;
+    if (capacity < frame_length || frame_length > UINT16_MAX) {
+        return false;
+    }
+
+    memset(frame, 0, frame_length);
+    frame[0] = 0x08U;
+    memcpy(frame + 4, ethernet, 6U);
+    memcpy(frame + 10, self_mac, 6U);
+    memcpy(frame + 16, awdl_bssid, sizeof(awdl_bssid));
+    put_le16(frame + 22,
+             (uint16_t)((ieee80211_sequence & 0x0fffU) << 4U));
+
+    uint8_t *cursor = frame + IEEE80211_HEADER_BYTES;
+    memcpy(cursor, llc_header, sizeof(llc_header));
+    cursor += LLC_HEADER_BYTES;
+    cursor[0] = 0x03U;
+    cursor[1] = 0x04U;
+    put_le16(cursor + 2, awdl_sequence);
+    memcpy(cursor + 6, ethernet + 12, 2U);
+    cursor += AWDL_DATA_HEADER_BYTES;
+    memcpy(cursor, ethernet + ESPDROP_ETHERNET_HEADER_BYTES, payload_length);
+
+    *length = frame_length;
+    return true;
+}
+
 static espdrop_awdl_data_decode_result_t decode_msdu(
     const uint8_t *msdu,
     size_t length,
@@ -328,5 +372,30 @@ bool espdrop_awdl_decode_ipv6(
         ipv6->icmp_payload = icmp + 4;
         ipv6->icmp_payload_length = payload_length - 4U;
     }
+    return true;
+}
+
+bool espdrop_awdl_data_to_ethernet(
+    const espdrop_awdl_data_t *data,
+    uint8_t *ethernet,
+    size_t capacity,
+    size_t *length)
+{
+    if (data == NULL || ethernet == NULL || length == NULL ||
+        data->payload == NULL ||
+        data->payload_length > SIZE_MAX - ESPDROP_ETHERNET_HEADER_BYTES) {
+        return false;
+    }
+    const size_t ethernet_length =
+        ESPDROP_ETHERNET_HEADER_BYTES + data->payload_length;
+    if (capacity < ethernet_length) {
+        return false;
+    }
+    memcpy(ethernet, data->destination, 6U);
+    memcpy(ethernet + 6, data->source, 6U);
+    put_be16(ethernet + 12, data->ethertype);
+    memcpy(ethernet + ESPDROP_ETHERNET_HEADER_BYTES, data->payload,
+           data->payload_length);
+    *length = ethernet_length;
     return true;
 }
