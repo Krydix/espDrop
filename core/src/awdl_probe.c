@@ -37,7 +37,7 @@ typedef struct {
     bool directed_to_self;
 } awdl_probe_record_t;
 
-#define AWDL_CAPTURE_BYTES 768U
+#define AWDL_CAPTURE_BYTES 1536U
 #define AWDL_CAPTURE_PEERS 8U
 #define AWDL_DATA_CAPTURE_BYTES 96U
 #define AWDL_DATA_CAPTURE_LIMIT 8U
@@ -219,7 +219,7 @@ static bool should_capture_mif(const uint8_t source[6])
 {
     for (size_t index = 0; index < sampled_mif_source_count; ++index) {
         if (memcmp(sampled_mif_sources[index], source, 6) == 0) {
-            return false;
+            return espdrop_awdl_tx_lab_wants_mif(source);
         }
     }
     if (sampled_mif_source_count >= AWDL_CAPTURE_PEERS) {

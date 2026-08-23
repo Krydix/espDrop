@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -11,6 +12,12 @@ extern "C" {
 #endif
 
 esp_err_t espdrop_awdl_tx_lab_init(const char *name);
+
+bool espdrop_awdl_tx_lab_netif_ready(void);
+
+bool espdrop_awdl_tx_lab_wants_mif(const uint8_t source[6]);
+
+bool espdrop_awdl_tx_lab_target(uint8_t output[6]);
 
 void espdrop_awdl_tx_lab_observe_mif(
     const espdrop_awdl_action_t *action,

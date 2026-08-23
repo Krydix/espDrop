@@ -94,7 +94,11 @@ TX_SUMMARY = re.compile(
     r"netif_rx_dropped=(?P<netif_rx_dropped>\d+) "
     r"mdns_queries=(?P<mdns_queries>\d+) "
     r"mdns_packets=(?P<mdns_packets>\d+) "
-    r"mdns_responses=(?P<mdns_responses>\d+)",
+    r"mdns_responses=(?P<mdns_responses>\d+) "
+    r"mdns_services=(?P<mdns_services>\d+) "
+    r"mdns_complete_services=(?P<mdns_complete_services>\d+) "
+    r"airdrop_tcp_attempts=(?P<airdrop_tcp_attempts>\d+) "
+    r"airdrop_tcp_connected=(?P<airdrop_tcp_connected>\d+)",
     re.IGNORECASE,
 )
 
@@ -188,7 +192,27 @@ MDNS_RX = re.compile(
 
 MDNS_SUMMARY = re.compile(
     r"AWDL-MDNS-SUMMARY queries=(?P<queries>\d+) "
-    r"packets=(?P<packets>\d+) responses=(?P<responses>\d+)",
+    r"packets=(?P<packets>\d+) responses=(?P<responses>\d+) "
+    r"services=(?P<services>\d+) complete=(?P<complete>\d+) "
+    r"tcp_attempts=(?P<tcp_attempts>\d+) "
+    r"tcp_connected=(?P<tcp_connected>\d+)",
+    re.IGNORECASE,
+)
+
+MDNS_SERVICE = re.compile(
+    r"AWDL-AIRDROP-SERVICE instance=(?P<instance>[^ ]+) "
+    r"target=(?P<target>[^ ]+) ipv6=(?P<ipv6>[^ ]+) "
+    r"port=(?P<port>\d+) ptr=(?P<ptr>\d+) srv=(?P<srv>\d+) "
+    r"txt_record=(?P<txt_record>\d+) aaaa=(?P<aaaa>\d+) "
+    r"complete=(?P<complete>\d+) txt=(?P<txt>.*)",
+    re.IGNORECASE,
+)
+
+AIRDROP_TCP = re.compile(
+    r"AWDL-AIRDROP-TCP instance=(?P<instance>[^ ]+) "
+    r"target=(?P<target>[^ ]+) ipv6=(?P<ipv6>[^ ]+) "
+    r"port=(?P<port>\d+) result=(?P<result>[^ ]+) "
+    r"error=(?P<error>\d+)",
     re.IGNORECASE,
 )
 
@@ -228,6 +252,8 @@ def main() -> None:
     mdns_queries = []
     mdns_packets = []
     mdns_summary = None
+    mdns_services = []
+    airdrop_tcp = []
     boot_lines = []
     with open_without_reset(args.port, timeout=0.25) as connection:
         while time.monotonic() < deadline:
@@ -368,6 +394,19 @@ def main() -> None:
                     key: int(value)
                     for key, value in mdns_summary_match.groupdict().items()
                 }
+            mdns_service_match = MDNS_SERVICE.search(line)
+            if mdns_service_match:
+                service = mdns_service_match.groupdict()
+                for key in ("port", "ptr", "srv", "txt_record", "aaaa",
+                            "complete"):
+                    service[key] = int(service[key])
+                mdns_services.append(service)
+            tcp_match = AIRDROP_TCP.search(line)
+            if tcp_match:
+                tcp_probe = tcp_match.groupdict()
+                tcp_probe["port"] = int(tcp_probe["port"])
+                tcp_probe["error"] = int(tcp_probe["error"])
+                airdrop_tcp.append(tcp_probe)
 
     unique_sources = sorted({item["source"] for item in frames})
     raw_captures = []
@@ -425,6 +464,8 @@ def main() -> None:
             "mdnsQueries": mdns_queries,
             "mdnsPackets": mdns_packets,
             "mdnsSummary": mdns_summary,
+            "airdropServices": mdns_services,
+            "airdropTcp": airdrop_tcp,
         },
         "bootLogPrefix": boot_lines,
     }

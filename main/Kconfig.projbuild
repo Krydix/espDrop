@@ -45,6 +45,15 @@ config ESPDROP_AWDL_MDNS_LAB
         Joins ff02::fb on the AWDL interface and sends six PTR queries for
         _airdrop._tcp.local. Only use in the bounded transmit lab.
 
+config ESPDROP_AWDL_LAB_TARGET_MAC
+    string "AWDL lab target MAC (empty selects automatically)"
+    depends on ESPDROP_AWDL_TX_LAB
+    default ""
+    help
+        Optional colon-separated AWDL peer MAC used only by the research lab.
+        When set, the transmitter waits for that peer's MIF and follows its
+        synchronization/channel sequence. Production builds leave this empty.
+
 config TAPDROP_NFC_FIELD_GPIO
     int "NFC field-detect GPIO (-1 disables hardware input)"
     range -1 48

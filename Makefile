@@ -118,6 +118,12 @@ test:
 		-o "$(BUILD_DIR)/host-tests/test_awdl_data"
 	@"$(BUILD_DIR)/host-tests/test_awdl_data"
 	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
+		-I"$(ROOT_DIR)/core/include" \
+		"$(ROOT_DIR)/core/src/airdrop_mdns.c" \
+		"$(ROOT_DIR)/tests/test_airdrop_mdns.c" \
+		-o "$(BUILD_DIR)/host-tests/test_airdrop_mdns"
+	@"$(BUILD_DIR)/host-tests/test_airdrop_mdns"
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
 		-I"$(ROOT_DIR)/main" \
 		"$(ROOT_DIR)/main/improv_serial_codec.c" \
 		"$(ROOT_DIR)/tests/test_improv_serial_codec.c" \

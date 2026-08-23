@@ -1,6 +1,7 @@
 #include "espdrop/awdl_netif.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -8,6 +9,8 @@
 #include "esp_log.h"
 #include "esp_netif_net_stack.h"
 #include "esp_wifi.h"
+#include "espdrop/airdrop_mdns.h"
+#include "espdrop/awdl_tx_lab.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -134,11 +137,38 @@ static void join_mld_group(void *argument)
     join->result = mld6_joingroup_netif(join->netif, &join->group);
 }
 
+static espdrop_airdrop_mdns_result_t mdns_cache;
+static espdrop_airdrop_mdns_result_t mdns_parse_scratch;
+
+static void probe_airdrop_tcp(int interface_index);
+
+static void log_service(const espdrop_airdrop_service_t *service)
+{
+    char address[INET6_ADDRSTRLEN] = "-";
+    if (service->has_ipv6) {
+        ip6_addr_t ipv6;
+        memcpy(&ipv6, service->ipv6, sizeof(service->ipv6));
+        (void)inet6_ntoa_r(ipv6, address, sizeof(address));
+    }
+    ESP_LOGI(TAG,
+             "AWDL-AIRDROP-SERVICE instance=%s target=%s ipv6=%s port=%u "
+             "ptr=%u srv=%u txt_record=%u aaaa=%u complete=%u txt=%s",
+             service->instance,
+             service->has_srv ? service->target : "-", address,
+             service->port, service->has_ptr, service->has_srv,
+             service->has_txt, service->has_ipv6,
+             espdrop_airdrop_service_complete(service),
+             service->has_txt && service->txt[0] != '\0' ? service->txt : "-");
+}
+
 static bool receive_mdns_packet(int socket_fd)
 {
     static uint8_t packet[768];
+    struct sockaddr_in6 source = {0};
+    socklen_t source_length = sizeof(source);
     const ssize_t received = recvfrom(socket_fd, packet, sizeof(packet), 0,
-                                      NULL, NULL);
+                                      (struct sockaddr *)&source,
+                                      &source_length);
     if (received < 12) {
         return false;
     }
@@ -160,7 +190,114 @@ static bool receive_mdns_packet(int socket_fd)
              "AWDL-MDNS-RX bytes=%d response=%u qd=%u an=%u ns=%u ar=%u count=%lu",
              (int)received, (flags & 0x8000U) != 0U, questions, answers,
              authority, additional, (unsigned long)stats.mdns_packets);
+
+    if (!espdrop_airdrop_mdns_parse(packet, (size_t)received,
+                                    &mdns_parse_scratch)) {
+        ESP_LOGW(TAG, "AWDL-MDNS-PARSE bytes=%d result=invalid", (int)received);
+        return true;
+    }
+    espdrop_airdrop_mdns_merge(&mdns_cache, &mdns_parse_scratch);
+    stats.mdns_services = (uint32_t)mdns_cache.service_count;
+    stats.mdns_complete_services = 0U;
+    for (size_t index = 0U; index < mdns_cache.service_count; ++index) {
+        if (espdrop_airdrop_service_complete(&mdns_cache.services[index])) {
+            ++stats.mdns_complete_services;
+        }
+        log_service(&mdns_cache.services[index]);
+    }
     return true;
+}
+
+static void probe_airdrop_tcp_service(
+    int interface_index,
+    const espdrop_airdrop_service_t *service)
+{
+    ++stats.airdrop_tcp_attempts;
+    const int socket_fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+    if (socket_fd < 0) {
+        ESP_LOGE(TAG,
+                 "AWDL-AIRDROP-TCP instance=%s result=socket-error error=%d",
+                 service->instance, errno);
+        return;
+    }
+    const struct timeval timeout = {.tv_sec = 6, .tv_usec = 0};
+    (void)setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO,
+                     &timeout, sizeof(timeout));
+    (void)setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO,
+                     &timeout, sizeof(timeout));
+    struct sockaddr_in6 destination = {
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(service->port),
+        .sin6_scope_id = (uint32_t)interface_index,
+    };
+    memcpy(&destination.sin6_addr, service->ipv6,
+           sizeof(destination.sin6_addr));
+    (void)fcntl(socket_fd, F_SETFL,
+                fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK);
+    int result = connect(socket_fd, (struct sockaddr *)&destination,
+                         sizeof(destination));
+    int connection_error = result == 0 ? 0 : errno;
+    if (result != 0 && connection_error == EINPROGRESS) {
+        fd_set write_set;
+        FD_ZERO(&write_set);
+        FD_SET(socket_fd, &write_set);
+        struct timeval connect_timeout = {.tv_sec = 6, .tv_usec = 0};
+        const int selected = select(socket_fd + 1, NULL, &write_set, NULL,
+                                    &connect_timeout);
+        if (selected > 0) {
+            socklen_t error_length = sizeof(connection_error);
+            if (getsockopt(socket_fd, SOL_SOCKET, SO_ERROR,
+                           &connection_error, &error_length) != 0) {
+                connection_error = errno;
+            }
+            result = connection_error == 0 ? 0 : -1;
+        } else {
+            connection_error = selected == 0 ? ETIMEDOUT : errno;
+            result = -1;
+        }
+    }
+    if (result == 0) {
+        ++stats.airdrop_tcp_connected;
+    }
+    char address[INET6_ADDRSTRLEN] = "-";
+    ip6_addr_t ipv6;
+    memcpy(&ipv6, service->ipv6, sizeof(service->ipv6));
+    (void)inet6_ntoa_r(ipv6, address, sizeof(address));
+    ESP_LOGW(TAG,
+             "AWDL-AIRDROP-TCP instance=%s target=%s ipv6=%s port=%u "
+             "result=%s error=%d",
+             service->instance, service->target, address, service->port,
+             result == 0 ? "connected" : "failed", connection_error);
+    close(socket_fd);
+}
+
+static void probe_airdrop_tcp(int interface_index)
+{
+    for (size_t index = 0U; index < mdns_cache.service_count; ++index) {
+        const espdrop_airdrop_service_t *service = &mdns_cache.services[index];
+        if (espdrop_airdrop_service_complete(service)) {
+            probe_airdrop_tcp_service(interface_index, service);
+        }
+    }
+}
+
+static void probe_lab_target_tcp(int interface_index)
+{
+    uint8_t target_mac[6];
+    if (!espdrop_awdl_tx_lab_target(target_mac)) {
+        return;
+    }
+    espdrop_airdrop_service_t service = {
+        .instance = "lab-target",
+        .target = "configured-awdl-peer",
+        .port = 8770U,
+        .has_ptr = true,
+        .has_srv = true,
+        .has_txt = true,
+        .has_ipv6 = true,
+    };
+    espdrop_awdl_link_local_from_mac(target_mac, service.ipv6);
+    probe_airdrop_tcp_service(interface_index, &service);
 }
 
 static void mdns_task(void *argument)
@@ -273,6 +410,24 @@ static void mdns_task(void *argument)
     };
     (void)inet6_aton("ff02::fb", &destination.sin6_addr);
 
+    /* Do not enqueue DNS traffic until the selected peer has supplied a valid
+     * schedule and the bounded transmitter has drained at least one netif
+     * frame. A fixed delay races peer discovery and can fill lwIP's queue. */
+    unsigned ready_waits = 0U;
+    while (!espdrop_awdl_tx_lab_netif_ready() && ready_waits < 360U) {
+        vTaskDelay(pdMS_TO_TICKS(250U));
+        ++ready_waits;
+    }
+    if (!espdrop_awdl_tx_lab_netif_ready()) {
+        ESP_LOGE(TAG, "AWDL-MDNS transmit window unavailable");
+        close(socket_fd);
+        vTaskDelete(NULL);
+        return;
+    }
+    ESP_LOGI(TAG, "AWDL-MDNS transmit window ready wait_ms=%u",
+             ready_waits * 250U);
+    probe_lab_target_tcp(interface_index);
+
     for (unsigned attempt = 1; attempt <= AWDL_MDNS_QUERY_ATTEMPTS;
          ++attempt) {
         const ssize_t sent = sendto(socket_fd, query, sizeof(query), 0,
@@ -288,18 +443,31 @@ static void mdns_task(void *argument)
              ++receive_attempt) {
             (void)receive_mdns_packet(socket_fd);
         }
+        if (stats.mdns_complete_services != 0U &&
+            stats.airdrop_tcp_attempts == 0U) {
+            probe_airdrop_tcp(interface_index);
+        }
     }
     /* Keep the joined socket alive beyond the bounded transmit window. Apple
      * peers periodically emit their service cache even without a fresh query. */
-    for (unsigned receive_attempt = 0; receive_attempt < 60U;
+    for (unsigned receive_attempt = 0; receive_attempt < 240U;
          ++receive_attempt) {
         (void)receive_mdns_packet(socket_fd);
+        if (stats.mdns_complete_services != 0U &&
+            stats.airdrop_tcp_attempts == 0U) {
+            probe_airdrop_tcp(interface_index);
+        }
     }
     ESP_LOGW(TAG,
-             "AWDL-MDNS-SUMMARY queries=%lu packets=%lu responses=%lu",
+             "AWDL-MDNS-SUMMARY queries=%lu packets=%lu responses=%lu "
+             "services=%lu complete=%lu tcp_attempts=%lu tcp_connected=%lu",
              (unsigned long)stats.mdns_queries,
              (unsigned long)stats.mdns_packets,
-             (unsigned long)stats.mdns_responses);
+             (unsigned long)stats.mdns_responses,
+             (unsigned long)stats.mdns_services,
+             (unsigned long)stats.mdns_complete_services,
+             (unsigned long)stats.airdrop_tcp_attempts,
+             (unsigned long)stats.airdrop_tcp_connected);
     close(socket_fd);
     vTaskDelete(NULL);
 }

@@ -65,7 +65,18 @@ These hashes are research provenance, not dependencies in release firmware.
 ## M2/M3 — AirDrop
 
 - [ ] Capture target iPhone OS/build and discoverability mode.
-- [ ] Confirm current mDNS PTR/SRV/TXT/AAAA behavior.
+- [x] Implement and host-test a compression-aware bounded PTR/SRV/TXT/AAAA
+  decoder. A real ESP socket also decoded Apple PTR traffic into the live
+  instance `9df4fc4f18c2._airdrop._tcp.local` without crashing after moving
+  parser scratch storage out of the mDNS task stack.
+- [ ] Repeatably reconstruct a complete PTR/SRV/TXT/AAAA receiver in one
+  retained hardware artifact. One live run reconstructed the Mac endpoint
+  (`fe80::e833:2cff:fe82:f57f`, port 8770), but the capture script then lost
+  the artifact to a fixed variable-shadowing bug; the clean repeat contained
+  PTR records only.
+- [ ] Establish TCP to the discovered AirDrop endpoint. A scoped TCP attempt
+  to the confirmed Mac address/port was emitted during the bounded lab but
+  ended with `EHOSTUNREACH`; no AWDL neighbor admission occurred in that run.
 - [ ] Confirm TLS versions, cipher, certificate requirements, and scoping.
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
 - [ ] Confirm TransferID and connection-reuse requirements.
@@ -109,7 +120,14 @@ one directed Neighbor Advertisement and one matching Echo Reply from the stock
 iPhone. The next bounded run attached that path to an ESP-IDF netif: a real
 UDP/5353 socket sent six AirDrop PTR queries and received four DNS responses
 from two Apple peers. Raw bidirectional IPv6 and socket-level mDNS are now
-proven; DNS-SD record interpretation and endurance are next.
+proven. The next slice added bounded DNS-SD record interpretation, an explicit
+transmit-readiness gate, retryable full-size MIF capture for targeted peers,
+and a scoped TCP diagnostic. The Mac's MIF was 1,059 bytes (larger than the old
+768-byte capture ceiling), and real DNS parsing initially exposed and then
+fixed a task-stack overflow. A post-fix 80-second run injected nine AWDL IPv6
+packets, decoded the iPhone's AirDrop PTR, and remained stable. Complete
+receiver reconstruction and TCP still depend on making AWDL peer admission
+repeatable rather than merely radio-completing the scheduled frames.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

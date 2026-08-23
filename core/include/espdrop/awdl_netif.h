@@ -30,6 +30,10 @@ typedef struct {
     uint32_t mdns_queries;
     uint32_t mdns_packets;
     uint32_t mdns_responses;
+    uint32_t mdns_services;
+    uint32_t mdns_complete_services;
+    uint32_t airdrop_tcp_attempts;
+    uint32_t airdrop_tcp_connected;
 } espdrop_awdl_netif_stats_t;
 
 esp_err_t espdrop_awdl_netif_init(const uint8_t self_mac[6]);

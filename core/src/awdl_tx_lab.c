@@ -1,6 +1,7 @@
 #include "espdrop/awdl_tx_lab.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -20,7 +21,11 @@
 #endif
 
 #define AWDL_TX_LAB_WINDOW_MS 15000U
+#if CONFIG_ESPDROP_AWDL_MDNS_LAB
+#define AWDL_TX_LAB_START_DELAY_MS 12000U
+#else
 #define AWDL_TX_LAB_START_DELAY_MS 1500U
+#endif
 #define AWDL_TX_LAB_PROBE_LIMIT 14U
 #define AWDL_TX_LAB_CHANNEL_WINDOW_GUARD_US 4000U
 #define AWDL_TX_LAB_AWDL_SEQUENCE_OFFSET 34U
@@ -32,9 +37,12 @@ static const char *TAG = "awdl_tx_lab";
 static SemaphoreHandle_t state_lock;
 static espdrop_awdl_tx_state_t tx_state;
 static uint8_t station_mac[6];
+static uint8_t target_mac[6];
+static bool has_target_mac;
 static char device_name[ESPDROP_AWDL_TX_NAME_BYTES];
 static bool has_state;
 static bool task_started;
+static volatile bool netif_ready;
 static uint32_t directed_reactions;
 static uint32_t neighbor_advertisements;
 static uint32_t echo_replies;
@@ -51,6 +59,25 @@ static volatile uint32_t echo_radio_completed;
 static volatile uint32_t echo_radio_success;
 static volatile uint32_t echo_radio_failed;
 static volatile uint32_t unknown_data_radio_completed;
+
+static bool parse_mac(const char *text, uint8_t output[6])
+{
+    unsigned octets[6];
+    char trailing;
+    if (text == NULL || text[0] == '\0' ||
+        sscanf(text, "%x:%x:%x:%x:%x:%x%c",
+               &octets[0], &octets[1], &octets[2], &octets[3],
+               &octets[4], &octets[5], &trailing) != 6) {
+        return false;
+    }
+    for (size_t index = 0U; index < 6U; ++index) {
+        if (octets[index] > 0xffU) {
+            return false;
+        }
+        output[index] = (uint8_t)octets[index];
+    }
+    return true;
+}
 
 static void wait_until_us(uint64_t target_us)
 {
@@ -214,6 +241,7 @@ static void lab_tx_task(void *argument)
         vTaskDelay(pdMS_TO_TICKS(2U));
         const size_t netif_flushed = espdrop_awdl_netif_flush(1U);
         if (netif_flushed != 0U) {
+            netif_ready = true;
             ESP_LOGI(TAG, "TX-LAB-NETIF flushed=%u",
                      (unsigned)netif_flushed);
         }
@@ -299,7 +327,9 @@ static void lab_tx_task(void *argument)
              "netif_tx_radio_success=%lu netif_tx_radio_failed=%lu "
              "netif_rx_enqueued=%lu netif_rx_injected=%lu "
              "netif_rx_dropped=%lu mdns_queries=%lu mdns_packets=%lu "
-             "mdns_responses=%lu",
+             "mdns_responses=%lu mdns_services=%lu "
+             "mdns_complete_services=%lu airdrop_tcp_attempts=%lu "
+             "airdrop_tcp_connected=%lu",
              (unsigned long)attempted, (unsigned long)accepted,
              (unsigned long)errors,
              (unsigned long)action_radio_completed,
@@ -335,7 +365,11 @@ static void lab_tx_task(void *argument)
              (unsigned long)netif.rx_dropped,
              (unsigned long)netif.mdns_queries,
              (unsigned long)netif.mdns_packets,
-             (unsigned long)netif.mdns_responses);
+             (unsigned long)netif.mdns_responses,
+             (unsigned long)netif.mdns_services,
+             (unsigned long)netif.mdns_complete_services,
+             (unsigned long)netif.airdrop_tcp_attempts,
+             (unsigned long)netif.airdrop_tcp_connected);
     vTaskDelete(NULL);
 }
 #endif
@@ -352,12 +386,20 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
     }
     ESP_RETURN_ON_ERROR(esp_wifi_get_mac(WIFI_IF_STA, station_mac), TAG,
                         "read station MAC");
+    has_target_mac = parse_mac(CONFIG_ESPDROP_AWDL_LAB_TARGET_MAC,
+                               target_mac);
     ESP_RETURN_ON_ERROR(esp_wifi_set_tx_done_cb(lab_tx_done), TAG,
                         "register transmit completion callback");
     (void)strncpy(device_name, name, sizeof(device_name) - 1U);
     ESP_LOGW(TAG,
              "lab transmit profile armed; waits for a valid MIF, then sends "
              "for at most 15 seconds");
+    if (has_target_mac) {
+        ESP_LOGW(TAG,
+                 "lab target=%02x:%02x:%02x:%02x:%02x:%02x",
+                 target_mac[0], target_mac[1], target_mac[2], target_mac[3],
+                 target_mac[4], target_mac[5]);
+    }
 #else
     (void)name;
 #endif
@@ -371,6 +413,10 @@ void espdrop_awdl_tx_lab_observe_mif(
 {
 #if CONFIG_ESPDROP_AWDL_TX_LAB
     if (state_lock == NULL || action == NULL || mif == NULL) {
+        return;
+    }
+    if (has_target_mac &&
+        memcmp(action->source, target_mac, sizeof(target_mac)) != 0) {
         return;
     }
     espdrop_awdl_tx_state_t candidate;
@@ -408,6 +454,40 @@ void espdrop_awdl_tx_lab_observe_mif(
     (void)action;
     (void)mif;
     (void)received_at_us;
+#endif
+}
+
+bool espdrop_awdl_tx_lab_netif_ready(void)
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    return netif_ready;
+#else
+    return false;
+#endif
+}
+
+bool espdrop_awdl_tx_lab_wants_mif(const uint8_t source[6])
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    return source != NULL && has_target_mac &&
+           memcmp(source, target_mac, sizeof(target_mac)) == 0;
+#else
+    (void)source;
+    return false;
+#endif
+}
+
+bool espdrop_awdl_tx_lab_target(uint8_t output[6])
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    if (output == NULL || !has_target_mac) {
+        return false;
+    }
+    memcpy(output, target_mac, sizeof(target_mac));
+    return true;
+#else
+    (void)output;
+    return false;
 #endif
 }
 
