@@ -10,6 +10,8 @@ import time
 
 import serial
 
+from serial_port import open_without_reset
+
 
 HEADER = b"IMPROV"
 RPC_COMMAND = 0x03
@@ -61,9 +63,7 @@ def main() -> None:
     password = ""
     password_bytes = b""
 
-    with serial.Serial(args.port, 115200, timeout=0.2, exclusive=True) as port:
-        port.dtr = False
-        port.rts = False
+    with open_without_reset(args.port, timeout=0.2) as port:
         time.sleep(2.0)
         port.reset_input_buffer()
         port.write(packet(RPC_COMMAND, rpc_data))

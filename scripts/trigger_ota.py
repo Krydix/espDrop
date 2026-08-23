@@ -9,6 +9,8 @@ import time
 
 import serial
 
+from serial_port import open_without_reset
+
 
 COMMAND = b"ESPDROP OTA\n"
 ACK = b"ESPDROP-OTA-ARMED\n"
@@ -20,9 +22,7 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=8.0)
     args = parser.parse_args()
 
-    with serial.Serial(args.port, 115200, timeout=0.2, exclusive=True) as port:
-        port.dtr = False
-        port.rts = False
+    with open_without_reset(args.port, timeout=0.2) as port:
         time.sleep(2.0)
         port.reset_input_buffer()
         port.write(COMMAND)

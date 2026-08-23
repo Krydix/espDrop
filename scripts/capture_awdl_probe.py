@@ -12,6 +12,8 @@ from pathlib import Path
 
 import serial
 
+from serial_port import open_without_reset
+
 
 FRAME = re.compile(
     r"AWDL (?P<subtype>MIF|PSF) "
@@ -227,9 +229,7 @@ def main() -> None:
     mdns_packets = []
     mdns_summary = None
     boot_lines = []
-    with serial.Serial(args.port, 115200, timeout=0.25) as connection:
-        connection.dtr = False
-        connection.rts = False
+    with open_without_reset(args.port, timeout=0.25) as connection:
         while time.monotonic() < deadline:
             raw = connection.readline()
             if not raw:
