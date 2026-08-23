@@ -22,6 +22,7 @@ bool espdrop_awdl_tx_lab_target(uint8_t output[6]);
 void espdrop_awdl_tx_lab_observe_mif(
     const espdrop_awdl_action_t *action,
     const espdrop_awdl_mif_t *mif,
+    bool advertises_airdrop_tcp,
     uint64_t received_at_us);
 
 void espdrop_awdl_tx_lab_note_peer_seen(

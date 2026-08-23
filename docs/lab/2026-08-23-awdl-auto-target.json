@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "same-boot selection of an ephemeral AirDrop AWDL peer",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "channel": 6,
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "software": {
+    "selectionSignal": "parsed _airdrop._tcp service response in a live MIF",
+    "selectionLifetime": "one bounded boot; ephemeral MAC retained only in RAM",
+    "explicitTargetPrecedence": true,
+    "explicitTargetsWaitForTheirOwnMif": true,
+    "distanceZeroQualifierAvailable": true,
+    "distanceZeroQualifierEnabledInLabDefaults": true,
+    "admissionRequiredBeforeMdns": true,
+    "captureRecordsAutoTarget": true,
+    "hostTestsPassed": true,
+    "passiveFirmwareBuildPassed": true,
+    "boundedLabBuildPassed": true
+  },
+  "hardwareExperiments": [
+    {
+      "name": "same-boot-airdrop-auto-target",
+      "targetMac": "06:e9:49:af:57:78",
+      "targetAdvertisedAirdropTcp": true,
+      "targetElectionDistance": 1,
+      "actionRadioSuccess": 14,
+      "actionRadioFailed": 0,
+      "neighborSolicitationRadioSuccess": 14,
+      "echoRequestRadioSuccess": 14,
+      "dataRadioFailed": 0,
+      "directedReactions": 0,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false,
+      "mdnsQueries": 0,
+      "completeEndpoints": 0
+    },
+    {
+      "name": "distance-zero-qualified-auto-target",
+      "durationSeconds": 62,
+      "distanceZeroAirdropCandidateSeen": false,
+      "distanceZeroNonAirdropPeerSeen": true,
+      "distanceOneAirdropPeerSeen": true,
+      "targetSelected": false,
+      "transmitTaskStarted": false,
+      "mdnsQueries": 0,
+      "result": "fully passive"
+    },
+    {
+      "name": "distance-zero-qualified-retrigger",
+      "durationSeconds": 70,
+      "receiverViewReopenedDuringSameBoot": true,
+      "distanceZeroAirdropCandidateSeen": false,
+      "targetSelected": false,
+      "transmitTaskStarted": false,
+      "mdnsQueries": 0,
+      "result": "fully passive"
+    }
+  ],
+  "result": {
+    "confirmed": "A bounded lab image can select a protocol-confirmed ephemeral AirDrop receiver from its live MIF and exercise that exact peer without compiling its MAC into firmware. The one-session lock prevents later unrelated peers from changing the target. The distance-zero qualifier remains passive when no eligible receiver is present, and the admission gate suppresses mDNS when the selected peer gives no directed response.",
+    "notConfirmed": "The distance-one AirDrop receiver did not return a directed Neighbor Advertisement or Echo Reply, so no live endpoint or TCP connection was retained.",
+    "nextFocus": "Determine the current peer-admission state or MIF content required by distance-one receivers, while retaining the same-boot selector so the next eligible session can reach the implemented DNS-SD resolver without a rebuild race."
+  }
+}

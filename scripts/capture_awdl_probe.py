@@ -180,6 +180,12 @@ TX_ADMITTED = re.compile(
     re.IGNORECASE,
 )
 
+TX_AUTO_TARGET = re.compile(
+    r"TX-LAB-AUTO-TARGET peer=(?P<peer>[0-9a-f:]+) "
+    r"service=(?P<service>[^ ]+) distance=(?P<distance>\d+)",
+    re.IGNORECASE,
+)
+
 TX_TOPOLOGY_WAIT = re.compile(
     r"TX-LAB-WAIT peer=(?P<peer>[0-9a-f:]+) "
     r"observed_distance=(?P<observed_distance>\d+) "
@@ -294,6 +300,7 @@ def main() -> None:
     tx_windows = []
     tx_summary = None
     tx_admission = None
+    tx_auto_target = None
     tx_topology_waits = []
     tx_topology = None
     tx_elections = []
@@ -388,6 +395,12 @@ def main() -> None:
             tx_admitted_match = TX_ADMITTED.search(line)
             if tx_admitted_match:
                 tx_admission = tx_admitted_match.groupdict()
+            tx_auto_target_match = TX_AUTO_TARGET.search(line)
+            if tx_auto_target_match:
+                tx_auto_target = tx_auto_target_match.groupdict()
+                tx_auto_target["distance"] = int(
+                    tx_auto_target["distance"]
+                )
             tx_topology_wait_match = TX_TOPOLOGY_WAIT.search(line)
             if tx_topology_wait_match:
                 topology_wait = tx_topology_wait_match.groupdict()
@@ -549,6 +562,7 @@ def main() -> None:
             "sampledFrames": tx_frames,
             "summary": tx_summary,
             "admission": tx_admission,
+            "autoTarget": tx_auto_target,
             "topologyWaits": tx_topology_waits,
             "topology": tx_topology,
             "elections": tx_elections,

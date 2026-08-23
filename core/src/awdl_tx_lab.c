@@ -17,12 +17,20 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#ifndef CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+#define CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP 0
+#endif
+#ifndef CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO
+#define CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO 0
+#endif
+
 #if CONFIG_ESPDROP_AWDL_TX_LAB
 #include "esp_private/wifi.h"
 #endif
 
 #define AWDL_TX_LAB_WINDOW_MS 15000U
-#if CONFIG_ESPDROP_AWDL_MDNS_LAB
+#if CONFIG_ESPDROP_AWDL_MDNS_LAB && \
+    !CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
 #define AWDL_TX_LAB_START_DELAY_MS 8000U
 #else
 #define AWDL_TX_LAB_START_DELAY_MS 1500U
@@ -569,6 +577,13 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
                  target_mac[0], target_mac[1], target_mac[2], target_mac[3],
                  target_mac[4], target_mac[5]);
     }
+    if (!has_target_mac &&
+        CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP) {
+        ESP_LOGW(TAG,
+                 "lab auto-target armed; waiting for live _airdrop._tcp MIF "
+                 "distance_zero=%u",
+                 CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO ? 1U : 0U);
+    }
     if (has_schedule_mac && !CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION) {
         ESP_LOGW(TAG,
                  "lab schedule-source=%02x:%02x:%02x:%02x:%02x:%02x",
@@ -590,6 +605,7 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
 void espdrop_awdl_tx_lab_observe_mif(
     const espdrop_awdl_action_t *action,
     const espdrop_awdl_mif_t *mif,
+    bool advertises_airdrop_tcp,
     uint64_t received_at_us)
 {
 #if CONFIG_ESPDROP_AWDL_TX_LAB
@@ -636,6 +652,7 @@ void espdrop_awdl_tx_lab_observe_mif(
 #endif
 
     bool start_task = false;
+    bool auto_targeted = false;
     xSemaphoreTake(state_lock, portMAX_DELAY);
 #if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
     tx_state = candidate;
@@ -650,7 +667,22 @@ void espdrop_awdl_tx_lab_observe_mif(
         has_state = true;
     }
 #endif
-    if (!task_started) {
+    const bool auto_target_topology_ok =
+        !CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO ||
+        (mif->has_election_v2 &&
+         mif->election_v2.distance_to_master == 0U);
+    if (!has_target_mac &&
+        CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP &&
+        advertises_airdrop_tcp && auto_target_topology_ok) {
+        memcpy(target_mac, action->source, sizeof(target_mac));
+        has_target_mac = true;
+        auto_targeted = true;
+    }
+    const bool target_is_live =
+        !has_target_mac ||
+        memcmp(action->source, target_mac, sizeof(target_mac)) == 0;
+    if (!task_started && target_is_live &&
+        (!CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP || has_target_mac)) {
         task_started = true;
         start_task = true;
 #if CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
@@ -664,6 +696,17 @@ void espdrop_awdl_tx_lab_observe_mif(
     }
     xSemaphoreGive(state_lock);
 
+    if (auto_targeted) {
+        ESP_LOGW(TAG,
+                 "TX-LAB-AUTO-TARGET peer="
+                 "%02x:%02x:%02x:%02x:%02x:%02x service=_airdrop._tcp "
+                 "distance=%lu",
+                 action->source[0], action->source[1], action->source[2],
+                 action->source[3], action->source[4], action->source[5],
+                 (unsigned long)(mif->has_election_v2
+                     ? mif->election_v2.distance_to_master : UINT32_MAX));
+    }
+
     if (start_task && xTaskCreate(lab_tx_task, "awdl_tx_lab", 5120, NULL,
                                   6, NULL) != pdPASS) {
         xSemaphoreTake(state_lock, portMAX_DELAY);
@@ -674,6 +717,7 @@ void espdrop_awdl_tx_lab_observe_mif(
 #else
     (void)action;
     (void)mif;
+    (void)advertises_airdrop_tcp;
     (void)received_at_us;
 #endif
 }

@@ -84,8 +84,13 @@ These hashes are research provenance, not dependencies in release firmware.
   implemented and hardware-tested, but the intended distance-one address
   rotated away before the valid post-election run. A fresh session candidate
   advertised itself at distance zero and still returned no admission evidence.
-  Distance-one admission therefore remains open, and the missing behavior is
-  likely elsewhere in peer admission or the still-minimal advertised MIF.
+  A later same-boot selector eliminated the rebuild/ephemeral-MAC race and
+  locked a protocol-confirmed distance-one `_airdrop._tcp` receiver. Its
+  14/14 action, 14/14 NS, and 14/14 Echo radio completions again produced zero
+  directed replies. Distance-one admission therefore remains open, and the
+  missing behavior is likely elsewhere in peer admission, the still-minimal
+  advertised MIF, or the S3's inability to follow 5 GHz windows. Evidence is
+  in [`lab/2026-08-23-awdl-auto-target.json`](lab/2026-08-23-awdl-auto-target.json).
 - [ ] Record loss, schedule drift, heap high-water mark, and watchdog status.
 
 ## M2/M3 — AirDrop
@@ -106,6 +111,14 @@ These hashes are research provenance, not dependencies in release firmware.
   and rejects malformed/truncated records. A passive S3 run classified the
   Mac's nine records with zero errors. The peer table only selects a receiver
   when exactly one fresh protocol-confirmed candidate exists.
+- [x] Select a live ephemeral AirDrop lab target without rebuilding firmware.
+  With no explicit target, the bounded image waits for a parsed
+  `_airdrop._tcp` MIF, locks that peer in RAM for one session, and records the
+  selection. A distance-zero qualifier is enabled by default for the lab; two
+  captures with no eligible receiver selected no target and transmitted
+  nothing. This removes the stale-MAC race without weakening the admission
+  gate. Evidence is in
+  [`lab/2026-08-23-awdl-auto-target.json`](lab/2026-08-23-awdl-auto-target.json).
 - [ ] Repeatably reconstruct a complete PTR/SRV/TXT/AAAA receiver in one
   retained hardware artifact. One live run reconstructed the Mac endpoint
   (`fe80::e833:2cff:fe82:f57f`, port 8770), but the capture script then lost
@@ -117,6 +130,10 @@ These hashes are research provenance, not dependencies in release firmware.
   completions. The gate correctly emitted zero mDNS queries in every run.
   Evidence is in
   [`lab/2026-08-23-airdrop-endpoint-resolution.json`](lab/2026-08-23-airdrop-endpoint-resolution.json).
+  Same-boot protocol-driven target selection now removes the rebuild race,
+  but its first distance-one hardware target still failed admission and sent
+  zero mDNS queries; endpoint reconstruction therefore remains unproven on
+  the retained hardware path.
 - [ ] Establish TCP to the discovered AirDrop endpoint. A scoped TCP attempt
   to the confirmed Mac address/port was emitted during the bounded lab but
   ended with `EHOSTUNREACH`; no AWDL neighbor admission occurred in that run.

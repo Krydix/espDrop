@@ -56,6 +56,28 @@ config ESPDROP_AWDL_LAB_TARGET_MAC
         lab's Neighbor Solicitation and Echo probes. AirDrop endpoint tests
         are restricted to the same peer. Production builds leave this empty.
 
+config ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+    bool "Automatically target a live AirDrop TCP advertiser"
+    depends on ESPDROP_AWDL_TX_LAB
+    default n
+    help
+        When no explicit target MAC is configured, remain passive until a
+        parsed MIF service response advertises _airdrop._tcp, then bind the
+        bounded experiment to that ephemeral peer in RAM. This avoids losing
+        short-lived Apple peer identities while rebuilding firmware. An
+        explicit target MAC always takes precedence. Production builds leave
+        this disabled.
+
+config ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO
+    bool "Require an AirDrop advertiser to be an AWDL master"
+    depends on ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+    default y
+    help
+        Restrict automatic target selection to a MIF whose election-v2
+        distance is zero. This produces the reproducible admission control
+        topology before testing distance-one receivers. Explicit target MACs
+        are not affected.
+
 config ESPDROP_AWDL_LAB_SCHEDULE_MAC
     string "AWDL lab schedule-source MAC"
     depends on ESPDROP_AWDL_TX_LAB

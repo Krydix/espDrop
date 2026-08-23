@@ -583,6 +583,7 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
                  services.has_asquic ? 1U : 0U);
     }
     espdrop_awdl_tx_lab_observe_mif(&action, &mif,
+                                    services.has_airdrop_tcp,
                                     capture->received_at_us);
     apply_mif_to_peer(capture->source, &action, &mif, &services,
                       capture->received_at_us / 1000U);

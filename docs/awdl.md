@@ -267,6 +267,35 @@ endpoint-resolution failure; the resolver never became eligible to transmit.
 The negative controls and exact boundary are retained in
 [`lab/2026-08-23-airdrop-endpoint-resolution.json`](lab/2026-08-23-airdrop-endpoint-resolution.json).
 
+## Same-boot AirDrop target selection
+
+AirDrop receiver MAC addresses are ephemeral enough that copying one into a
+lab configuration, rebuilding, and rebooting can lose the intended peer. The
+bounded lab can now remain passive until a live parsed MIF advertises
+`_airdrop._tcp`, bind that peer in RAM for one session, and begin the existing
+15-second experiment without another build. An explicit configured target
+still takes precedence and now waits for its own live MIF instead of starting
+on traffic from an unrelated peer. The capture artifact records the automatic
+selection event.
+
+**CONFIRMED IN A BOUNDED HARDWARE RUN on 2026-08-23:** same-boot selection
+locked protocol-confirmed AirDrop peer `06:e9:49:af:57:78` at election
+distance one. All 14 action frames, 14 Neighbor Solicitations, and 14 Echo
+Requests radio-completed. The peer returned no directed reaction, so the
+admission gate emitted zero mDNS queries and retained no endpoint.
+
+The lab defaults now additionally require an automatically selected AirDrop
+peer to advertise election distance zero. Two subsequent captures, including
+one reopening of the native macOS AirDrop receiver view during the same boot,
+saw no peer satisfying both conditions. No target was selected, no transmit
+task started, and no mDNS query was sent. This is a valid passive safety
+control, not a failed transmission. The complete compact evidence is in
+[`lab/2026-08-23-awdl-auto-target.json`](lab/2026-08-23-awdl-auto-target.json).
+
+Same-boot selection removes the stale-identity race. It does not solve the
+remaining distance-one admission boundary; richer current MIF/admission state
+or the S3's single-band channel limitation remains the next research focus.
+
 ## Timing model
 
 **CONFIRMED by the OWL research:** AWDL divides time into availability windows
