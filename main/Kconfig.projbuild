@@ -78,6 +78,16 @@ config ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO
         topology before testing distance-one receivers. Explicit target MACs
         are not affected.
 
+config ESPDROP_AWDL_LAB_AUTO_TARGET_REQUIRE_CHILD
+    bool "Require an AirDrop advertiser below another AWDL master"
+    depends on ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP && !ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO
+    default n
+    help
+        Research-only qualifier for the staged-admission experiment. Automatic
+        target selection waits for an AirDrop advertiser whose election-v2
+        distance is nonzero, proving that the target and top synchronization
+        master are distinct. Explicit target MACs are not affected.
+
 config ESPDROP_AWDL_LAB_SCHEDULE_MAC
     string "AWDL lab schedule-source MAC"
     depends on ESPDROP_AWDL_TX_LAB
@@ -110,6 +120,17 @@ config ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
         parent's timing and channel sequence replace the fixed schedule-source
         override. Normal and web-flasher builds never transmit regardless of
         this setting.
+
+config ESPDROP_AWDL_LAB_STAGE_SYNC_ANCHOR
+    bool "Admit the top synchronization master before a separate endpoint"
+    depends on ESPDROP_AWDL_TX_LAB && ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    default n
+    help
+        Research-only two-stage admission experiment. When the selected
+        AirDrop endpoint differs from the elected top synchronization master,
+        direct Neighbor Solicitation and Echo probes to that master first.
+        Probe the endpoint only after the master returns directed IPv6
+        evidence. Normal and web-flasher builds leave this disabled.
 
 config TAPDROP_NFC_FIELD_GPIO
     int "NFC field-detect GPIO (-1 disables hardware input)"

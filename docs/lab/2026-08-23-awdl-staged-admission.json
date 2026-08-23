@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "staged top-master admission before a distinct AirDrop endpoint",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "channel": 6,
+    "transmitWindowSeconds": 15,
+    "probeLimit": 14,
+    "normalBuildTransmitEnabled": false
+  },
+  "mifDifferential": {
+    "espdropDataPathTlvBytes": 15,
+    "currentAppleDataPathTlvBytes": 47,
+    "currentAppleAdditionalObservedTlvs": [17, 33],
+    "finding": "The same legacy-sized espDrop MIF was accepted in the earlier distance-zero admission control, while both successful and unsuccessful Apple peers used the current longer Data Path form. The longer Apple form is therefore not the demonstrated admission discriminant and was not fabricated from unrelated infrastructure state."
+  },
+  "software": {
+    "topMasterFirstAdmissionSelector": true,
+    "exactCurrentAnchorRequiredBeforeTarget": true,
+    "staleAnchorRejected": true,
+    "targetMasterBypassesAnchorStage": true,
+    "childAutoTargetQualifier": true,
+    "qualifiedTargetAnchorPairFrozenForSession": true,
+    "resetSynchronizedSerialCapture": true,
+    "hostTestsPassed": true,
+    "passiveFirmwareBuildPassed": true,
+    "boundedLabBuildPassed": true
+  },
+  "hardwareExperiments": [
+    {
+      "name": "top-master-bypass-control",
+      "airdropTarget": "a6:ed:54:02:5b:4e",
+      "targetElectionDistance": 0,
+      "windowStageCounts": {"anchor": 0, "target": 14},
+      "actionRadioSuccess": 14,
+      "neighborSolicitationRadioSuccess": 14,
+      "echoRequestRadioSuccess": 14,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false,
+      "qualification": "Valid control of the direct-target branch; it did not exercise staged child admission."
+    },
+    {
+      "name": "rotating-child-topology",
+      "airdropTarget": "a6:ed:54:02:5b:4e",
+      "targetReportedElectionDistance": 2,
+      "observedProbeSequence": [
+        "d2:2e:75:c5:ab:64",
+        "9e:cf:af:45:59:fe",
+        "a6:ed:54:02:5b:4e"
+      ],
+      "windowStageCounts": {"anchor": 6, "target": 8},
+      "actionRadioSuccess": 14,
+      "neighborSolicitationRadioSuccess": 11,
+      "neighborSolicitationRadioFailed": 3,
+      "echoRequestRadioSuccess": 11,
+      "echoRequestRadioFailed": 3,
+      "anchorAdmissions": 0,
+      "targetAdmissions": 0,
+      "qualification": "Negative response evidence, but not a clean staged-admission test: the live election changed twice during the bounded session. This run motivated freezing the qualified pair."
+    },
+    {
+      "name": "frozen-pair-qualification-control",
+      "durationSeconds": 130,
+      "uniquePeers": [
+        "9e:cf:af:45:59:fe",
+        "a6:ed:54:02:5b:4e"
+      ],
+      "qualifiedChildAnchorPairSeen": false,
+      "targetSelected": false,
+      "scheduledWindows": 0,
+      "transmitTaskStarted": false,
+      "result": "fully passive"
+    }
+  ],
+  "result": {
+    "confirmed": "The lab can distinguish anchor and endpoint admission, select the top master first, require an exact anchor reply before progressing, bypass staging when the endpoint is itself master, and remain passive until a distinct target/anchor pair is internally consistent.",
+    "notConfirmed": "No stable distinct AirDrop-child/top-master pair occurred after the session-freeze correction, and no anchor returned admission evidence in the earlier rotating run. Anchor-first admission is therefore still an unproven hypothesis.",
+    "nextFocus": "Retain this profile for the next naturally occurring stable child topology. If the frozen top master admits but the endpoint does not, inspect child-directed admission state; if the top master does not admit, return to MIF membership semantics or the single-band channel limitation."
+  }
+}

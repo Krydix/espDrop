@@ -258,5 +258,18 @@ so that run's 28 failed unicast radio completions are an absence control, not
 evidence against the election model. This leaves the richer MIF/service state
 and multi-channel limitations as the next admission research boundary.
 
+The staged-admission follow-up narrowed that boundary without resolving it.
+The MIF differential found that current Apple peers use a longer Data Path TLV
+and additional fields, but those fields occurred on both sides of the earlier
+success/failure comparison while espDrop's existing short form had already
+been accepted by a top master. Copying them is therefore not evidence-backed.
+The new bounded profile can require a distinct AirDrop child and top master,
+freeze that pair, admit only the exact master first, and remain passive if the
+topology is not internally consistent. One pre-freeze run followed a rotating
+master set and received no directed response; a 130-second post-freeze control
+never saw a qualifying pair and transmitted nothing. **UNKNOWN:** whether a
+stable top master will admit espDrop and then make its AirDrop child reachable;
+that exact hardware condition has not yet occurred after the correction.
+
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

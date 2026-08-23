@@ -335,6 +335,40 @@ so the correction still needs a live-AirDrop hardware repeat. Compact evidence
 is preserved in
 [`lab/2026-08-23-awdl-peer-copresence.json`](lab/2026-08-23-awdl-peer-copresence.json).
 
+## Staged top-master admission
+
+The retained distance-zero success and distance-one failures differ most
+clearly in election topology: the successful peer was the top master, whereas
+the desired AirDrop receiver was often a child. A transmitted-MIF differential
+did not justify copying newer Apple-only fields. Current Apple MIFs used a
+47-byte Data Path TLV and additional type-17/type-33 state, but both successful
+and unsuccessful Apple peers used that form, and the earlier top-master
+admission accepted espDrop's existing 15-byte form. Those fields are therefore
+documented observations, not a demonstrated missing requirement.
+
+The bounded lab now supports a narrower experiment: select the elected top
+master first, direct MIF/Neighbor Solicitation/Echo probes to it, and progress
+to a separate AirDrop endpoint only after that exact master returns a directed
+Neighbor Advertisement or matching Echo Reply. A stale or different master
+cannot unlock the endpoint. When the endpoint is itself top master, the helper
+correctly takes the direct path. The distance-one profile can additionally
+wait for an advertiser whose own election distance is nonzero and for which a
+distinct elected master's MIF is present. The qualified target/anchor pair is
+then frozen for that one bounded session so election churn cannot silently
+change the question being tested.
+
+**PARTIALLY CONFIRMED IN BOUNDED HARDWARE RUNS on 2026-08-23:** a direct-master
+control used the target stage for all 14 windows. A later rotating-topology run
+used four windows against one anchor, two against another, and eight directly
+against the endpoint after the live election changed; none returned admission
+evidence. That run exposed the confounder and motivated session freezing. A
+130-second post-fix control observed only an AirDrop endpoint that remained top
+master, so it selected no child target, scheduled no windows, and transmitted
+nothing. The implementation and safety behavior are confirmed; anchor-first
+admission itself remains unknown until a stable distinct child/master pair is
+observed. Evidence is preserved in
+[`lab/2026-08-23-awdl-staged-admission.json`](lab/2026-08-23-awdl-staged-admission.json).
+
 ## Timing model
 
 **CONFIRMED by the OWL research:** AWDL divides time into availability windows

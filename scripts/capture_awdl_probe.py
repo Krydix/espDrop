@@ -65,7 +65,9 @@ TX_WINDOW = re.compile(
     r"scheduled=(?P<scheduled>\d+) actual=(?P<actual>\d+) "
     r"lateness_us=(?P<lateness_us>\d+)"
     r"(?: copresence=(?P<copresence>\d+) "
-    r"target=(?P<target>[0-9a-f:]+))?",
+    r"target=(?P<target>[0-9a-f:]+)"
+    r"(?: stage=(?P<stage>anchor|target) "
+    r"probe=(?P<probe>[0-9a-f:]+))?)?",
     re.IGNORECASE,
 )
 
@@ -111,7 +113,8 @@ TX_SUMMARY = re.compile(
     r"mdns_services=(?P<mdns_services>\d+) "
     r"mdns_complete_services=(?P<mdns_complete_services>\d+) "
     r"airdrop_tcp_attempts=(?P<airdrop_tcp_attempts>\d+) "
-    r"airdrop_tcp_connected=(?P<airdrop_tcp_connected>\d+)",
+    r"airdrop_tcp_connected=(?P<airdrop_tcp_connected>\d+)"
+    r"(?: anchor_admitted=(?P<anchor_admitted>\d+))?",
     re.IGNORECASE,
 )
 
@@ -178,6 +181,12 @@ TX_REACTION = re.compile(
 
 TX_ADMITTED = re.compile(
     r"TX-LAB-ADMITTED peer=(?P<peer>[0-9a-f:]+) "
+    r"evidence=(?P<evidence>[a-z-]+)",
+    re.IGNORECASE,
+)
+
+TX_ANCHOR_ADMITTED = re.compile(
+    r"TX-LAB-ANCHOR-ADMITTED peer=(?P<peer>[0-9a-f:]+) "
     r"evidence=(?P<evidence>[a-z-]+)",
     re.IGNORECASE,
 )
@@ -283,6 +292,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", required=True)
     parser.add_argument("--seconds", type=float, default=30)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="hard-reset into the application after opening the serial port",
+    )
     return parser.parse_args()
 
 
@@ -292,7 +306,6 @@ def main() -> None:
         raise SystemExit("--seconds must be positive")
 
     started = datetime.now(timezone.utc)
-    deadline = time.monotonic() + args.seconds
     frames = []
     diagnostics = []
     raw_mifs = {}
@@ -302,6 +315,7 @@ def main() -> None:
     tx_windows = []
     tx_summary = None
     tx_admission = None
+    tx_anchor_admissions = []
     tx_auto_target = None
     tx_topology_waits = []
     tx_topology = None
@@ -325,6 +339,20 @@ def main() -> None:
     airdrop_tcp = []
     boot_lines = []
     with open_without_reset(args.port, timeout=0.25) as connection:
+        if args.reset:
+            # Match ESP-IDF monitor's normal-boot reset sequence.  Put IO0 and
+            # EN in their idle states first, then pulse EN without selecting
+            # the ROM bootloader.  Keeping the port open captures the bounded
+            # lab's first line instead of racing the native USB console.
+            connection.reset_input_buffer()
+            connection.rts = False
+            connection.dtr = False
+            time.sleep(0.05)
+            connection.rts = True
+            time.sleep(0.10)
+            connection.rts = False
+            time.sleep(0.25)
+        deadline = time.monotonic() + args.seconds
         while time.monotonic() < deadline:
             raw = connection.readline()
             if not raw:
@@ -390,13 +418,17 @@ def main() -> None:
                         window.pop(key)
                 if window["target"] is None:
                     window.pop("target")
+                if window["stage"] is None:
+                    window.pop("stage")
+                if window["probe"] is None:
+                    window.pop("probe")
                 tx_windows.append(window)
             tx_summary_match = TX_SUMMARY.search(line)
             if tx_summary_match:
-                tx_summary = {
-                    key: int(value)
-                    for key, value in tx_summary_match.groupdict().items()
-                }
+                tx_summary = {}
+                for key, value in tx_summary_match.groupdict().items():
+                    if value is not None:
+                        tx_summary[key] = int(value)
             tx_reaction_match = TX_REACTION.search(line)
             if tx_reaction_match:
                 reaction = tx_reaction_match.groupdict()
@@ -405,6 +437,11 @@ def main() -> None:
             tx_admitted_match = TX_ADMITTED.search(line)
             if tx_admitted_match:
                 tx_admission = tx_admitted_match.groupdict()
+            tx_anchor_admitted_match = TX_ANCHOR_ADMITTED.search(line)
+            if tx_anchor_admitted_match:
+                tx_anchor_admissions.append(
+                    tx_anchor_admitted_match.groupdict()
+                )
             tx_auto_target_match = TX_AUTO_TARGET.search(line)
             if tx_auto_target_match:
                 tx_auto_target = tx_auto_target_match.groupdict()
@@ -557,6 +594,7 @@ def main() -> None:
         "startedAt": started.isoformat(timespec="seconds"),
         "durationSeconds": args.seconds,
         "port": args.port,
+        "resetAtStart": args.reset,
         "framesLogged": len(frames),
         "uniqueSources": unique_sources,
         "mifLogged": sum(item["subtype"].upper() == "MIF" for item in frames),
@@ -572,6 +610,7 @@ def main() -> None:
             "sampledFrames": tx_frames,
             "summary": tx_summary,
             "admission": tx_admission,
+            "anchorAdmissions": tx_anchor_admissions,
             "autoTarget": tx_auto_target,
             "topologyWaits": tx_topology_waits,
             "topology": tx_topology,

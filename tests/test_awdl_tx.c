@@ -116,6 +116,41 @@ int main(void)
         phase_local.sync_reference_us + 7ULL * eaw_us, 3000U,
         &scheduled_us));
 
+    uint8_t admission_peer[6];
+    bool is_target = false;
+    const uint8_t target[6] = {0x06, 0xe9, 0x49, 0xaf, 0x57, 0x78};
+    const uint8_t stale_anchor[6] = {0x52, 0xf4, 0x36, 0xb8, 0xfd, 0xf5};
+    const uint8_t top_master[6] = {0x9e, 0xcf, 0xaf, 0x45, 0x59, 0xfe};
+    espdrop_awdl_tx_state_t staged_state = state;
+    memcpy(staged_state.master, top_master, 6U);
+    assert(espdrop_awdl_select_admission_peer(
+        &staged_state, target, NULL, true, admission_peer, &is_target));
+    assert(!is_target);
+    assert(memcmp(admission_peer, top_master, 6U) == 0);
+    assert(memcmp(admission_peer, staged_state.sync_master, 6U) != 0);
+    assert(espdrop_awdl_select_admission_peer(
+        &staged_state, target, top_master, true, admission_peer,
+        &is_target));
+    assert(is_target);
+    assert(memcmp(admission_peer, target, 6U) == 0);
+    assert(espdrop_awdl_select_admission_peer(
+        &staged_state, target, stale_anchor, true, admission_peer,
+        &is_target));
+    assert(!is_target);
+    assert(memcmp(admission_peer, top_master, 6U) == 0);
+    assert(espdrop_awdl_select_admission_peer(
+        &staged_state, target, NULL, false, admission_peer, &is_target));
+    assert(is_target);
+    assert(memcmp(admission_peer, target, 6U) == 0);
+    assert(espdrop_awdl_select_admission_peer(
+        &staged_state, top_master, NULL, true, admission_peer, &is_target));
+    assert(is_target);
+    assert(memcmp(admission_peer, top_master, 6U) == 0);
+    assert(espdrop_awdl_select_admission_peer(
+        &state, NULL, NULL, true, admission_peer, &is_target));
+    assert(is_target);
+    assert(memcmp(admission_peer, state.sync_master, 6U) == 0);
+
     uint8_t frame[ESPDROP_AWDL_TX_FRAME_CAPACITY];
     size_t length = 0;
     assert(espdrop_awdl_build_action(
