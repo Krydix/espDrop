@@ -97,6 +97,7 @@ def main() -> None:
     parser.add_argument("--host")
     parser.add_argument("--listen-port", type=int, default=0)
     parser.add_argument("--timeout", type=float, default=50.0)
+    parser.add_argument("--restart-grace", type=float, default=8.0)
     args = parser.parse_args()
 
     firmware = args.firmware.resolve()
@@ -141,6 +142,10 @@ def main() -> None:
         server.server_close()
         thread.join(timeout=2.0)
 
+    # Do not open the native USB endpoint while the S3 is switching OTA slots
+    # and re-enumerating. On macOS, probing during that boundary can strand the
+    # USB Serial/JTAG block until a hardware reset.
+    time.sleep(args.restart_grace)
     info = wait_for_device_info(args.port)
     version = info[1] if len(info) > 1 else "unknown"
     print(f"local OTA complete; {info[0]} {version} is back in normal mode")

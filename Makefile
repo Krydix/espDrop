@@ -132,9 +132,10 @@ ota-trigger:
 	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
 	@python3 "$(ROOT_DIR)/scripts/trigger_ota.py" --port "$(PORT)"
 
-ota-local: build
+ota-local:
 	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
 	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	$(call run_idf,reconfigure build)
 	@python3 "$(ROOT_DIR)/scripts/local_ota.py" \
 		--port "$(PORT)" \
 		--expected-serial "$(ESP_SERIAL)" \
