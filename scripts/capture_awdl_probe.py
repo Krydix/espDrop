@@ -203,6 +203,13 @@ MDNS_QUERY = re.compile(
     re.IGNORECASE,
 )
 
+MDNS_RESOLVE = re.compile(
+    r"AWDL-MDNS-RESOLVE round=(?P<round>\d+) "
+    r"name=(?P<name>[^ ]+) type=(?P<type>\d+) "
+    r"bytes=(?P<bytes>-?\d+) error=(?P<error>\d+)",
+    re.IGNORECASE,
+)
+
 MDNS_RX = re.compile(
     r"AWDL-MDNS-RX bytes=(?P<bytes>\d+) response=(?P<response>\d+) "
     r"qd=(?P<questions>\d+) an=(?P<answers>\d+) "
@@ -274,6 +281,7 @@ def main() -> None:
     netif_ready = None
     netif_tx = []
     mdns_queries = []
+    mdns_resolution_queries = []
     mdns_packets = []
     mdns_summary = None
     mdns_services = []
@@ -423,6 +431,12 @@ def main() -> None:
                     key: int(value)
                     for key, value in mdns_query_match.groupdict().items()
                 })
+            mdns_resolve_match = MDNS_RESOLVE.search(line)
+            if mdns_resolve_match:
+                resolution_query = mdns_resolve_match.groupdict()
+                for key in ("round", "type", "bytes", "error"):
+                    resolution_query[key] = int(resolution_query[key])
+                mdns_resolution_queries.append(resolution_query)
             mdns_rx_match = MDNS_RX.search(line)
             if mdns_rx_match:
                 mdns_packets.append({
@@ -506,6 +520,7 @@ def main() -> None:
             "ready": netif_ready,
             "transmittedFrames": netif_tx,
             "mdnsQueries": mdns_queries,
+            "mdnsResolutionQueries": mdns_resolution_queries,
             "mdnsPackets": mdns_packets,
             "mdnsSummary": mdns_summary,
             "airdropServices": mdns_services,

@@ -12,6 +12,10 @@ extern "C" {
 #define ESPDROP_MDNS_TXT_BYTES 256U
 #define ESPDROP_MDNS_MAX_SERVICES 4U
 #define ESPDROP_MDNS_MAX_HOSTS 4U
+#define ESPDROP_MDNS_TYPE_PTR 12U
+#define ESPDROP_MDNS_TYPE_TXT 16U
+#define ESPDROP_MDNS_TYPE_AAAA 28U
+#define ESPDROP_MDNS_TYPE_SRV 33U
 
 typedef struct {
     char name[ESPDROP_MDNS_NAME_BYTES];
@@ -41,6 +45,14 @@ typedef struct {
     uint16_t additional;
     bool response;
 } espdrop_airdrop_mdns_result_t;
+
+bool espdrop_mdns_build_query(
+    uint8_t *packet,
+    size_t capacity,
+    size_t *length,
+    const char *name,
+    uint16_t type,
+    bool unicast_response);
 
 bool espdrop_airdrop_mdns_parse(
     const uint8_t *packet,

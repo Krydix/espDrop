@@ -67,6 +67,13 @@ These hashes are research provenance, not dependencies in release firmware.
   one directed Neighbor Advertisement, two matching Echo Replies, 20/20
   radio-successful lwIP frames, and 25 socket-level mDNS packets during the
   retained capture.
+- [ ] Admit a distance-one iPhone peer. Two bounded controls each achieved
+  14/14 radio-successful NS and Echo probes with zero directed replies. The
+  first followed the distance-zero master's sequence while addressing the
+  iPhone. The second followed the iPhone's own sequence and corrected the
+  transmitted election-v2 `sync_master` from the observed TLV. Neither model
+  was sufficient. Full election/synchronization-tree state maintenance is now
+  the leading missing behavior, not physical proximity.
 - [ ] Record loss, schedule drift, heap high-water mark, and watchdog status.
 
 ## M2/M3 — AirDrop
@@ -89,6 +96,9 @@ These hashes are research provenance, not dependencies in release firmware.
   with `ETIMEDOUT` (116). Three PTR instances were observed afterward, so the
   next test must resolve each instance's SRV/TXT/AAAA records and use the
   advertised endpoint rather than the election master plus a fixed port.
+  Explicit bounded SRV/TXT/AAAA follow-up queries and exact target-address
+  filtering are implemented and host-tested, but distance-one admission did
+  not open the netif gate, so they have not yet transmitted on hardware.
 - [ ] Confirm TLS versions, cipher, certificate requirements, and scoping.
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
 - [ ] Confirm TransferID and connection-reuse requirements.
@@ -168,6 +178,19 @@ at a guessed port 8770 timed out, which is expected evidence against treating
 the AWDL election master as the AirDrop receiver endpoint. Peer admission is
 now repeatable when aligned to election topology; complete DNS-SD endpoint
 resolution is the next boundary.
+
+Two subsequent distance-one controls rejected a tempting but incorrect
+interpretation of that result. First, espDrop followed the distance-zero
+master's schedule while directing admission probes to the distance-one iPhone.
+Then it followed the iPhone's own channel sequence and corrected its MIF to
+copy `sync_master` from the received election-v2 TLV rather than assuming the
+MIF source was the master. Both variants radio-completed all 14 Neighbor
+Solicitations and all 14 Echo Requests, but the iPhone returned no Neighbor
+Advertisement or Echo Reply. Thus distance zero is an AWDL election role, not
+a proximity measurement, and simply accepting distance one is insufficient.
+The next AWDL slice must maintain the election and synchronization tree like a
+real peer; the current minimal 9-TLV bounded advertisement is not yet enough
+to join a non-master iPhone reliably.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

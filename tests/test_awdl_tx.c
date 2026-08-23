@@ -161,6 +161,36 @@ int main(void)
                frame, 32, &length, &state, ESPDROP_AWDL_ACTION_PSF,
                1010000ULL, 9) == ESPDROP_AWDL_BUILD_NO_SPACE);
 
+    const uint8_t distance_one_peer[6] = {
+        0xa6, 0xed, 0x54, 0x02, 0x5b, 0x4e,
+    };
+    const uint8_t distance_zero_master[6] = {
+        0x52, 0xf4, 0x36, 0xb8, 0xfd, 0xf5,
+    };
+    observed.election_v2.distance_to_master = 1U;
+    memcpy(observed.election_v2.master, distance_zero_master,
+           sizeof(distance_zero_master));
+    memcpy(observed.election_v2.sync_master, distance_zero_master,
+           sizeof(distance_zero_master));
+    assert(espdrop_awdl_tx_state_from_mif(
+        &state, self, distance_one_peer, "espDrop", 0x12345678U,
+        &observed, 1000000ULL));
+    assert(memcmp(state.master, distance_zero_master,
+                  sizeof(distance_zero_master)) == 0);
+    assert(memcmp(state.sync_master, distance_zero_master,
+                  sizeof(distance_zero_master)) == 0);
+    assert(state.distance_to_master == 2U);
+    assert(espdrop_awdl_build_action(
+               frame, sizeof(frame), &length, &state,
+               ESPDROP_AWDL_ACTION_MIF, 1000000ULL, 10U) ==
+           ESPDROP_AWDL_BUILD_OK);
+    assert(espdrop_awdl_decode_action(frame, length, &action));
+    assert(espdrop_awdl_parse_mif(&action, &parsed) ==
+           ESPDROP_AWDL_PARSE_OK);
+    assert(memcmp(parsed.election_v2.sync_master, distance_zero_master,
+                  sizeof(distance_zero_master)) == 0);
+    assert(parsed.election_v2.distance_to_master == 2U);
+
     puts("AWDL TX tests passed");
     return 0;
 }

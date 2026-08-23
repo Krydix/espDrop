@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "channel": 6,
+    "endpointPeer": "a6:ed:54:02:5b:4e",
+    "endpointObservedDistance": 1,
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "experiments": [
+    {
+      "name": "distance-zero-master-schedule-to-distance-one-endpoint",
+      "scheduleSource": "52:f4:36:b8:fd:f5",
+      "scheduleSourceDistance": 0,
+      "endpoint": "a6:ed:54:02:5b:4e",
+      "actionRadioSuccess": 14,
+      "neighborSolicitationRadioSuccess": 14,
+      "echoRequestRadioSuccess": 14,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false,
+      "netifFramesSubmitted": 0,
+      "mdnsQueries": 0,
+      "tcpAttempts": 0
+    },
+    {
+      "name": "distance-one-peer-schedule-with-election-master-identity",
+      "scheduleSource": "a6:ed:54:02:5b:4e",
+      "scheduleSourceDistance": 1,
+      "electionV2SyncMasterSource": "received election-v2 TLV",
+      "endpoint": "a6:ed:54:02:5b:4e",
+      "actionRadioSuccess": 14,
+      "neighborSolicitationRadioSuccess": 14,
+      "echoRequestRadioSuccess": 14,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false,
+      "netifFramesSubmitted": 0,
+      "mdnsQueries": 0,
+      "tcpAttempts": 0
+    }
+  ],
+  "softwareChangesValidated": {
+    "scheduleAndEndpointRolesSeparated": true,
+    "syncMasterCopiedFromElectionV2": true,
+    "explicitSrvTxtAaaaQueriesHostTested": true,
+    "fixedPortTcpGuessRemoved": true,
+    "tcpRestrictedToConfiguredPeerAddress": true
+  },
+  "result": {
+    "confirmed": "Distance is an AWDL election-tree property, not a physical-distance measurement. Neither the master's schedule nor the distance-one iPhone's schedule plus corrected master identity was sufficient for admission with espDrop's current minimal advertisement.",
+    "notConfirmed": "The user's current AirDrop UI state was not independently captured, the distance-one iPhone did not admit the ESP, and DNS-SD resolution/TCP remained behind the closed admission gate.",
+    "nextFocus": "Implement and validate continuously maintained election/synchronization-tree state from the published AWDL model and measured frames before another distance-one radio test."
+  }
+}

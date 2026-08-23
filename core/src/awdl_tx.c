@@ -95,7 +95,8 @@ bool espdrop_awdl_tx_state_from_mif(
         mif == NULL || !mif->has_sync || !mif->has_election_v2 ||
         mif->sync.aw_period_tu == 0U || mif->sync.presence_mode == 0U ||
         mif->sync.presence_mode > ESPDROP_AWDL_MAX_CHANNELS ||
-        mac_is_zero(self) || mac_is_zero(mif->election_v2.master)) {
+        mac_is_zero(self) || mac_is_zero(mif->election_v2.master) ||
+        mac_is_zero(mif->election_v2.sync_master)) {
         return false;
     }
 
@@ -112,7 +113,8 @@ bool espdrop_awdl_tx_state_from_mif(
     memset(state, 0, sizeof(*state));
     memcpy(state->self, self, sizeof(state->self));
     memcpy(state->master, mif->election_v2.master, sizeof(state->master));
-    memcpy(state->sync_master, source, sizeof(state->sync_master));
+    memcpy(state->sync_master, mif->election_v2.sync_master,
+           sizeof(state->sync_master));
     (void)strncpy(state->name, name, sizeof(state->name) - 1U);
     state->sync_reference_us = observation_us >= elapsed_us
                                    ? observation_us - elapsed_us : 0U;

@@ -7,10 +7,53 @@
 #define DNS_POINTER_VALUE 0xc0U
 #define DNS_MAX_RECORDS 64U
 #define DNS_MAX_POINTERS 16U
-#define DNS_TYPE_AAAA 28U
-#define DNS_TYPE_PTR 12U
-#define DNS_TYPE_SRV 33U
-#define DNS_TYPE_TXT 16U
+#define DNS_TYPE_AAAA ESPDROP_MDNS_TYPE_AAAA
+#define DNS_TYPE_PTR ESPDROP_MDNS_TYPE_PTR
+#define DNS_TYPE_SRV ESPDROP_MDNS_TYPE_SRV
+#define DNS_TYPE_TXT ESPDROP_MDNS_TYPE_TXT
+
+bool espdrop_mdns_build_query(
+    uint8_t *packet,
+    size_t capacity,
+    size_t *length,
+    const char *name,
+    uint16_t type,
+    bool unicast_response)
+{
+    if (packet == NULL || length == NULL || name == NULL || name[0] == '\0' ||
+        capacity < DNS_HEADER_BYTES + 6U) {
+        return false;
+    }
+    memset(packet, 0, DNS_HEADER_BYTES);
+    packet[5] = 1U;
+    size_t position = DNS_HEADER_BYTES;
+    const char *label = name;
+    while (*label != '\0') {
+        const char *dot = strchr(label, '.');
+        const size_t label_length = dot != NULL
+                                        ? (size_t)(dot - label)
+                                        : strlen(label);
+        if (label_length == 0U || label_length > 63U ||
+            position + 1U + label_length + 5U > capacity) {
+            return false;
+        }
+        packet[position++] = (uint8_t)label_length;
+        memcpy(&packet[position], label, label_length);
+        position += label_length;
+        if (dot == NULL) {
+            break;
+        }
+        label = dot + 1;
+    }
+    packet[position++] = 0U;
+    packet[position++] = (uint8_t)(type >> 8U);
+    packet[position++] = (uint8_t)type;
+    const uint16_t dns_class = unicast_response ? 0x8001U : 0x0001U;
+    packet[position++] = (uint8_t)(dns_class >> 8U);
+    packet[position++] = (uint8_t)dns_class;
+    *length = position;
+    return true;
+}
 
 static uint16_t read_u16(const uint8_t *bytes)
 {

@@ -21,10 +21,8 @@
 #endif
 
 #define AWDL_TX_LAB_WINDOW_MS 15000U
-#if CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
-#define AWDL_TX_LAB_START_DELAY_MS 1500U
-#elif CONFIG_ESPDROP_AWDL_MDNS_LAB
-#define AWDL_TX_LAB_START_DELAY_MS 12000U
+#if CONFIG_ESPDROP_AWDL_MDNS_LAB
+#define AWDL_TX_LAB_START_DELAY_MS 8000U
 #else
 #define AWDL_TX_LAB_START_DELAY_MS 1500U
 #endif
@@ -41,6 +39,8 @@ static espdrop_awdl_tx_state_t tx_state;
 static uint8_t station_mac[6];
 static uint8_t target_mac[6];
 static bool has_target_mac;
+static uint8_t schedule_mac[6];
+static bool has_schedule_mac;
 static char device_name[ESPDROP_AWDL_TX_NAME_BYTES];
 static bool has_state;
 static bool task_started;
@@ -286,16 +286,19 @@ static void lab_tx_task(void *argument)
         }
 
         if (!admitted) {
-            /* The raw probes are deliberately addressed to the MIF source,
-             * not merely the elected master. A directed NA or matching Echo
-             * Reply is the evidence that this exact peer admitted us. */
+            /* Synchronization and endpoint identity are independent. Follow
+             * the distance-zero anchor's windows, but address admission
+             * probes to the requested AirDrop endpoint. */
+            const uint8_t *probe_target = has_target_mac
+                                              ? target_mac
+                                              : snapshot.sync_master;
             vTaskDelay(pdMS_TO_TICKS(2U));
             uint8_t data_frame[ESPDROP_AWDL_NS_FRAME_BYTES];
             size_t data_length = 0U;
             ++data_attempted;
             if (!espdrop_awdl_build_neighbor_solicitation(
                     data_frame, sizeof(data_frame), &data_length,
-                    snapshot.self, snapshot.sync_master, sequence++,
+                    snapshot.self, probe_target, sequence++,
                     (uint16_t)data_attempted)) {
                 ++data_errors;
             } else {
@@ -310,9 +313,8 @@ static void lab_tx_task(void *argument)
                          "TX-LAB-NS number=%lu bytes=%u target="
                          "%02x:%02x:%02x:%02x:%02x:%02x driver=%s",
                          (unsigned long)data_attempted, (unsigned)data_length,
-                         snapshot.sync_master[0], snapshot.sync_master[1],
-                         snapshot.sync_master[2], snapshot.sync_master[3],
-                         snapshot.sync_master[4], snapshot.sync_master[5],
+                         probe_target[0], probe_target[1], probe_target[2],
+                         probe_target[3], probe_target[4], probe_target[5],
                          esp_err_to_name(data_result));
             }
 
@@ -322,7 +324,7 @@ static void lab_tx_task(void *argument)
             ++echo_attempted;
             if (!espdrop_awdl_build_echo_request(
                     echo_frame, sizeof(echo_frame), &echo_length,
-                    snapshot.self, snapshot.sync_master, sequence++,
+                    snapshot.self, probe_target, sequence++,
                     (uint16_t)(echo_attempted +
                                AWDL_TX_LAB_ECHO_SEQUENCE_MARKER),
                     AWDL_TX_LAB_ECHO_IDENTIFIER,
@@ -340,9 +342,8 @@ static void lab_tx_task(void *argument)
                          "TX-LAB-ECHO number=%lu bytes=%u target="
                          "%02x:%02x:%02x:%02x:%02x:%02x driver=%s",
                          (unsigned long)echo_attempted, (unsigned)echo_length,
-                         snapshot.sync_master[0], snapshot.sync_master[1],
-                         snapshot.sync_master[2], snapshot.sync_master[3],
-                         snapshot.sync_master[4], snapshot.sync_master[5],
+                         probe_target[0], probe_target[1], probe_target[2],
+                         probe_target[3], probe_target[4], probe_target[5],
                          esp_err_to_name(echo_result));
             }
         }
@@ -430,6 +431,12 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
                         "read station MAC");
     has_target_mac = parse_mac(CONFIG_ESPDROP_AWDL_LAB_TARGET_MAC,
                                target_mac);
+    has_schedule_mac = parse_mac(CONFIG_ESPDROP_AWDL_LAB_SCHEDULE_MAC,
+                                 schedule_mac);
+    if (!has_schedule_mac && has_target_mac) {
+        memcpy(schedule_mac, target_mac, sizeof(schedule_mac));
+        has_schedule_mac = true;
+    }
     ESP_RETURN_ON_ERROR(esp_wifi_set_tx_done_cb(lab_tx_done), TAG,
                         "register transmit completion callback");
     (void)strncpy(device_name, name, sizeof(device_name) - 1U);
@@ -441,6 +448,12 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
                  "lab target=%02x:%02x:%02x:%02x:%02x:%02x",
                  target_mac[0], target_mac[1], target_mac[2], target_mac[3],
                  target_mac[4], target_mac[5]);
+    }
+    if (has_schedule_mac) {
+        ESP_LOGW(TAG,
+                 "lab schedule-source=%02x:%02x:%02x:%02x:%02x:%02x",
+                 schedule_mac[0], schedule_mac[1], schedule_mac[2],
+                 schedule_mac[3], schedule_mac[4], schedule_mac[5]);
     }
 #else
     (void)name;
@@ -457,8 +470,8 @@ void espdrop_awdl_tx_lab_observe_mif(
     if (state_lock == NULL || action == NULL || mif == NULL) {
         return;
     }
-    if (has_target_mac &&
-        memcmp(action->source, target_mac, sizeof(target_mac)) != 0) {
+    if (has_schedule_mac &&
+        memcmp(action->source, schedule_mac, sizeof(schedule_mac)) != 0) {
         return;
     }
 #if CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
@@ -537,8 +550,8 @@ bool espdrop_awdl_tx_lab_netif_ready(void)
 bool espdrop_awdl_tx_lab_wants_mif(const uint8_t source[6])
 {
 #if CONFIG_ESPDROP_AWDL_TX_LAB
-    return source != NULL && has_target_mac &&
-           memcmp(source, target_mac, sizeof(target_mac)) == 0;
+    return source != NULL && has_schedule_mac &&
+           memcmp(source, schedule_mac, sizeof(schedule_mac)) == 0;
 #else
     (void)source;
     return false;

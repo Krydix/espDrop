@@ -140,6 +140,25 @@ int main(void)
     packet[13] = 0x0cU;
     assert(!espdrop_airdrop_mdns_parse(packet, length, &result));
 
+    uint8_t query[ESPDROP_MDNS_NAME_BYTES + 20U];
+    size_t query_length = 0U;
+    assert(espdrop_mdns_build_query(
+        query, sizeof(query), &query_length,
+        "abc._airdrop._tcp.local", ESPDROP_MDNS_TYPE_SRV, true));
+    assert(query[4] == 0U && query[5] == 1U);
+    assert(query[query_length - 4U] == 0U);
+    assert(query[query_length - 3U] == ESPDROP_MDNS_TYPE_SRV);
+    assert(query[query_length - 2U] == 0x80U);
+    assert(query[query_length - 1U] == 0x01U);
+    assert(espdrop_airdrop_mdns_parse(query, query_length, &result));
+    assert(!result.response && result.questions == 1U);
+    assert(!espdrop_mdns_build_query(
+        query, 16U, &query_length, "abc._airdrop._tcp.local",
+        ESPDROP_MDNS_TYPE_TXT, true));
+    assert(!espdrop_mdns_build_query(
+        query, sizeof(query), &query_length, "bad..name",
+        ESPDROP_MDNS_TYPE_AAAA, true));
+
     puts("AirDrop mDNS tests passed");
     return 0;
 }
