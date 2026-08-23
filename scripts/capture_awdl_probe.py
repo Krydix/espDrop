@@ -83,6 +83,7 @@ TX_SUMMARY = re.compile(
     r"unknown_data_radio_completed=(?P<unknown_data_radio_completed>\d+) "
     r"neighbor_advertisements=(?P<neighbor_advertisements>\d+) "
     r"echo_replies=(?P<echo_replies>\d+) "
+    r"admitted=(?P<admitted>\d+) "
     r"netif_tx_observed=(?P<netif_tx_observed>\d+) "
     r"netif_tx_enqueued=(?P<netif_tx_enqueued>\d+) "
     r"netif_tx_submitted=(?P<netif_tx_submitted>\d+) "
@@ -163,6 +164,12 @@ TX_REACTION = re.compile(
     re.IGNORECASE,
 )
 
+TX_ADMITTED = re.compile(
+    r"TX-LAB-ADMITTED peer=(?P<peer>[0-9a-f:]+) "
+    r"evidence=(?P<evidence>[a-z-]+)",
+    re.IGNORECASE,
+)
+
 NETIF_READY = re.compile(
     r"AWDL-NETIF ready if=(?P<interface>\d+) "
     r"ipv6=(?P<ipv6>[^ ]+) mtu=(?P<mtu>\d+)",
@@ -239,6 +246,7 @@ def main() -> None:
     tx_frames = []
     tx_windows = []
     tx_summary = None
+    tx_admission = None
     tx_reactions = []
     tx_neighbor_solicitations = []
     tx_neighbor_advertisements = []
@@ -316,6 +324,9 @@ def main() -> None:
                 reaction = tx_reaction_match.groupdict()
                 reaction["count"] = int(reaction["count"])
                 tx_reactions.append(reaction)
+            tx_admitted_match = TX_ADMITTED.search(line)
+            if tx_admitted_match:
+                tx_admission = tx_admitted_match.groupdict()
             tx_ns_match = TX_NS.search(line)
             if tx_ns_match:
                 solicitation = tx_ns_match.groupdict()
@@ -443,6 +454,7 @@ def main() -> None:
             "scheduledWindows": tx_windows,
             "sampledFrames": tx_frames,
             "summary": tx_summary,
+            "admission": tx_admission,
             "reactions": tx_reactions,
             "neighborSolicitations": tx_neighbor_solicitations,
             "neighborAdvertisements": tx_neighbor_advertisements,

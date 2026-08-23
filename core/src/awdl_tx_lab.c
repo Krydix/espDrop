@@ -42,6 +42,7 @@ static bool has_target_mac;
 static char device_name[ESPDROP_AWDL_TX_NAME_BYTES];
 static bool has_state;
 static bool task_started;
+static volatile bool admitted;
 static volatile bool netif_ready;
 static uint32_t directed_reactions;
 static uint32_t neighbor_advertisements;
@@ -59,6 +60,40 @@ static volatile uint32_t echo_radio_completed;
 static volatile uint32_t echo_radio_success;
 static volatile uint32_t echo_radio_failed;
 static volatile uint32_t unknown_data_radio_completed;
+
+static bool source_is_selected_peer(const uint8_t source[6])
+{
+    if (source == NULL) {
+        return false;
+    }
+    if (has_target_mac) {
+        return memcmp(source, target_mac, sizeof(target_mac)) == 0;
+    }
+    if (state_lock == NULL) {
+        return false;
+    }
+    bool selected = false;
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    selected = has_state &&
+               memcmp(source, tx_state.sync_master,
+                      sizeof(tx_state.sync_master)) == 0;
+    xSemaphoreGive(state_lock);
+    return selected;
+}
+
+static void admit_selected_peer(const uint8_t source[6], const char *evidence)
+{
+    if (!source_is_selected_peer(source) || admitted) {
+        return;
+    }
+    admitted = true;
+    netif_ready = true;
+    ESP_LOGW(TAG,
+             "TX-LAB-ADMITTED peer=%02x:%02x:%02x:%02x:%02x:%02x "
+             "evidence=%s",
+             source[0], source[1], source[2], source[3], source[4], source[5],
+             evidence);
+}
 
 static bool parse_mac(const char *text, uint8_t output[6])
 {
@@ -176,7 +211,7 @@ static void lab_tx_task(void *argument)
              "TX-LAB-START duration_ms=%u probe_limit=%u channel=6 scope=%s",
              AWDL_TX_LAB_WINDOW_MS, AWDL_TX_LAB_PROBE_LIMIT,
 #if CONFIG_ESPDROP_AWDL_MDNS_LAB
-             "scheduled-AWDL-actions-and-one-netif-frame-per-window"
+             "admission-probes-then-scheduled-netif-frames"
 #else
              "scheduled-AWDL-actions-neighbor-solicitation-and-echo"
 #endif
@@ -238,73 +273,76 @@ static void lab_tx_task(void *argument)
                      (unsigned)length, esp_err_to_name(result));
         }
 
-        vTaskDelay(pdMS_TO_TICKS(2U));
-        const size_t netif_flushed = espdrop_awdl_netif_flush(1U);
-        if (netif_flushed != 0U) {
-            netif_ready = true;
-            ESP_LOGI(TAG, "TX-LAB-NETIF flushed=%u",
-                     (unsigned)netif_flushed);
+        if (admitted) {
+            vTaskDelay(pdMS_TO_TICKS(2U));
+            const size_t netif_flushed = espdrop_awdl_netif_flush(2U);
+            if (netif_flushed != 0U) {
+                ESP_LOGI(TAG, "TX-LAB-NETIF flushed=%u",
+                         (unsigned)netif_flushed);
+            }
         }
 
-#if !CONFIG_ESPDROP_AWDL_MDNS_LAB
-        vTaskDelay(pdMS_TO_TICKS(2U));
-        uint8_t data_frame[ESPDROP_AWDL_NS_FRAME_BYTES];
-        size_t data_length = 0U;
-        ++data_attempted;
-        if (!espdrop_awdl_build_neighbor_solicitation(
-                data_frame, sizeof(data_frame), &data_length,
-                snapshot.self, snapshot.master, sequence++,
-                (uint16_t)data_attempted)) {
-            ++data_errors;
-        } else {
-            const esp_err_t data_result = esp_wifi_80211_tx(
-                WIFI_IF_STA, data_frame, (int)data_length, false);
-            if (data_result == ESP_OK) {
-                ++data_accepted;
-            } else {
+        if (!admitted) {
+            /* The raw probes are deliberately addressed to the MIF source,
+             * not merely the elected master. A directed NA or matching Echo
+             * Reply is the evidence that this exact peer admitted us. */
+            vTaskDelay(pdMS_TO_TICKS(2U));
+            uint8_t data_frame[ESPDROP_AWDL_NS_FRAME_BYTES];
+            size_t data_length = 0U;
+            ++data_attempted;
+            if (!espdrop_awdl_build_neighbor_solicitation(
+                    data_frame, sizeof(data_frame), &data_length,
+                    snapshot.self, snapshot.sync_master, sequence++,
+                    (uint16_t)data_attempted)) {
                 ++data_errors;
-            }
-            ESP_LOGI(TAG,
-                     "TX-LAB-NS number=%lu bytes=%u target="
-                     "%02x:%02x:%02x:%02x:%02x:%02x driver=%s",
-                     (unsigned long)data_attempted, (unsigned)data_length,
-                     snapshot.master[0], snapshot.master[1],
-                     snapshot.master[2], snapshot.master[3],
-                     snapshot.master[4], snapshot.master[5],
-                     esp_err_to_name(data_result));
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(4U));
-        uint8_t echo_frame[ESPDROP_AWDL_ECHO_FRAME_BYTES];
-        size_t echo_length = 0U;
-        ++echo_attempted;
-        if (!espdrop_awdl_build_echo_request(
-                echo_frame, sizeof(echo_frame), &echo_length,
-                snapshot.self, snapshot.master, sequence++,
-                (uint16_t)(echo_attempted +
-                           AWDL_TX_LAB_ECHO_SEQUENCE_MARKER),
-                AWDL_TX_LAB_ECHO_IDENTIFIER,
-                (uint16_t)echo_attempted)) {
-            ++echo_errors;
-        } else {
-            const esp_err_t echo_result = esp_wifi_80211_tx(
-                WIFI_IF_STA, echo_frame, (int)echo_length, false);
-            if (echo_result == ESP_OK) {
-                ++echo_accepted;
             } else {
-                ++echo_errors;
+                const esp_err_t data_result = esp_wifi_80211_tx(
+                    WIFI_IF_STA, data_frame, (int)data_length, false);
+                if (data_result == ESP_OK) {
+                    ++data_accepted;
+                } else {
+                    ++data_errors;
+                }
+                ESP_LOGI(TAG,
+                         "TX-LAB-NS number=%lu bytes=%u target="
+                         "%02x:%02x:%02x:%02x:%02x:%02x driver=%s",
+                         (unsigned long)data_attempted, (unsigned)data_length,
+                         snapshot.sync_master[0], snapshot.sync_master[1],
+                         snapshot.sync_master[2], snapshot.sync_master[3],
+                         snapshot.sync_master[4], snapshot.sync_master[5],
+                         esp_err_to_name(data_result));
             }
-            ESP_LOGI(TAG,
-                     "TX-LAB-ECHO number=%lu bytes=%u target="
-                     "%02x:%02x:%02x:%02x:%02x:%02x driver=%s",
-                     (unsigned long)echo_attempted, (unsigned)echo_length,
-                     snapshot.master[0], snapshot.master[1],
-                     snapshot.master[2], snapshot.master[3],
-                     snapshot.master[4], snapshot.master[5],
-                     esp_err_to_name(echo_result));
-        }
 
-#endif
+            vTaskDelay(pdMS_TO_TICKS(4U));
+            uint8_t echo_frame[ESPDROP_AWDL_ECHO_FRAME_BYTES];
+            size_t echo_length = 0U;
+            ++echo_attempted;
+            if (!espdrop_awdl_build_echo_request(
+                    echo_frame, sizeof(echo_frame), &echo_length,
+                    snapshot.self, snapshot.sync_master, sequence++,
+                    (uint16_t)(echo_attempted +
+                               AWDL_TX_LAB_ECHO_SEQUENCE_MARKER),
+                    AWDL_TX_LAB_ECHO_IDENTIFIER,
+                    (uint16_t)echo_attempted)) {
+                ++echo_errors;
+            } else {
+                const esp_err_t echo_result = esp_wifi_80211_tx(
+                    WIFI_IF_STA, echo_frame, (int)echo_length, false);
+                if (echo_result == ESP_OK) {
+                    ++echo_accepted;
+                } else {
+                    ++echo_errors;
+                }
+                ESP_LOGI(TAG,
+                         "TX-LAB-ECHO number=%lu bytes=%u target="
+                         "%02x:%02x:%02x:%02x:%02x:%02x driver=%s",
+                         (unsigned long)echo_attempted, (unsigned)echo_length,
+                         snapshot.sync_master[0], snapshot.sync_master[1],
+                         snapshot.sync_master[2], snapshot.sync_master[3],
+                         snapshot.sync_master[4], snapshot.sync_master[5],
+                         esp_err_to_name(echo_result));
+            }
+        }
         vTaskDelay(pdMS_TO_TICKS(20U));
     }
 
@@ -321,7 +359,7 @@ static void lab_tx_task(void *argument)
              "echo_accepted=%lu echo_errors=%lu directed_reactions=%lu "
              "echo_radio_completed=%lu echo_radio_success=%lu "
              "echo_radio_failed=%lu unknown_data_radio_completed=%lu "
-             "neighbor_advertisements=%lu echo_replies=%lu "
+             "neighbor_advertisements=%lu echo_replies=%lu admitted=%u "
              "netif_tx_observed=%lu netif_tx_enqueued=%lu "
              "netif_tx_submitted=%lu netif_tx_accepted=%lu "
              "netif_tx_radio_success=%lu netif_tx_radio_failed=%lu "
@@ -354,6 +392,7 @@ static void lab_tx_task(void *argument)
              (unsigned long)unknown_data_radio_completed,
              (unsigned long)neighbor_advertisements,
              (unsigned long)echo_replies,
+             admitted ? 1U : 0U,
              (unsigned long)netif.tx_observed,
              (unsigned long)netif.tx_enqueued,
              (unsigned long)netif.tx_submitted,
@@ -510,6 +549,7 @@ void espdrop_awdl_tx_lab_note_neighbor_advertisement(
 {
 #if CONFIG_ESPDROP_AWDL_TX_LAB
     ++neighbor_advertisements;
+    admit_selected_peer(source, "neighbor-advertisement");
     ESP_LOGI(TAG,
              "TX-LAB-NA IPv6 Neighbor Advertisement from "
              "%02x:%02x:%02x:%02x:%02x:%02x count=%lu",
@@ -530,6 +570,7 @@ void espdrop_awdl_tx_lab_note_echo_reply(
         return;
     }
     ++echo_replies;
+    admit_selected_peer(source, "echo-reply");
     ESP_LOGI(TAG,
              "TX-LAB-ECHO-REPLY from "
              "%02x:%02x:%02x:%02x:%02x:%02x id=%u sequence=%u count=%lu",

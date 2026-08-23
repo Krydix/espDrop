@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "ipv6LinkLocal": "fe80::1edb:d4ff:fe42:3fa0",
+    "channel": 6,
+    "profile": "CONFIG_ESPDROP_AWDL_TX_LAB=y; CONFIG_ESPDROP_AWDL_MDNS_LAB=y",
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "policy": {
+    "admissionEvidence": [
+      "directed IPv6 Neighbor Advertisement from the selected peer",
+      "matching ICMPv6 Echo Reply from the selected peer"
+    ],
+    "beforeAdmission": "send synchronized MIF plus bounded NS/Echo probes only",
+    "afterAdmission": "release queued lwIP traffic into synchronized AWDL windows",
+    "onNoAdmission": "submit no netif, mDNS, or TCP traffic"
+  },
+  "experiments": [
+    {
+      "peer": "ea:33:2c:82:f5:7f",
+      "kind": "this Mac awdl0; AirDrop Everyone enabled",
+      "scheduledWindows": 14,
+      "neighborSolicitationsDriverAccepted": 14,
+      "echoRequestsDriverAccepted": 14,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false,
+      "netifFramesSubmitted": 0,
+      "tcpAttempts": 0,
+      "mdnsQueries": 0
+    },
+    {
+      "peer": "a6:ed:54:02:5b:4e",
+      "kind": "visible iPhone AWDL peer; AirDrop service instance 9df4fc4f18c2 visible to macOS",
+      "scheduledWindows": 14,
+      "actionRadioSuccess": 14,
+      "neighborSolicitationRadioSuccess": 14,
+      "echoRequestRadioSuccess": 14,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false,
+      "netifFramesSubmitted": 0,
+      "tcpAttempts": 0,
+      "mdnsQueries": 0
+    }
+  ],
+  "result": {
+    "confirmed": "The admission gate prevents TCP/mDNS transmission when synchronized radio completion is not followed by evidence from the selected Apple peer.",
+    "notConfirmed": "These runs did not reproduce the earlier iPhone admission and therefore did not test TCP after admission.",
+    "nextFocus": "Identify the peer-election/topology condition that distinguished the earlier successful distance-zero iPhone run, then retry TCP only inside that admitted window."
+  }
+}

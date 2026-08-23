@@ -43,7 +43,9 @@ config ESPDROP_AWDL_MDNS_LAB
     default n
     help
         Joins ff02::fb on the AWDL interface and sends six PTR queries for
-        _airdrop._tcp.local. Only use in the bounded transmit lab.
+        _airdrop._tcp.local after the selected peer returns a directed IPv6
+        Neighbor Advertisement or Echo Reply. Only use in the bounded
+        transmit lab.
 
 config ESPDROP_AWDL_LAB_TARGET_MAC
     string "AWDL lab target MAC (empty selects automatically)"

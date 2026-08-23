@@ -129,5 +129,19 @@ packets, decoded the iPhone's AirDrop PTR, and remained stable. Complete
 receiver reconstruction and TCP still depend on making AWDL peer admission
 repeatable rather than merely radio-completing the scheduled frames.
 
+The admission-gated follow-up no longer treats a successful radio callback as
+proof that an Apple peer accepted espDrop. It first sends synchronized raw
+Neighbor Solicitation/Echo probes, and it releases queued lwIP traffic only
+after the selected peer returns a directed Neighbor Advertisement or matching
+Echo Reply. Two 15-second negative controls exercised the gate: one targeted
+this Mac (`ea:33:2c:82:f5:7f`) and one targeted the currently visible iPhone
+peer (`a6:ed:54:02:5b:4e`). Each scheduled 14 channel-6 windows and the driver
+accepted all 14 NS plus all 14 Echo probes; the retained iPhone summary also
+confirmed 14/14 radio completions for both frame types. Neither peer returned
+admission evidence. Consequently the gate submitted zero netif frames and made
+zero TCP or mDNS attempts. This makes the remaining boundary precise:
+repeatable AWDL peer admission/topology comes before AirDrop TCP, and AirDrop
+discoverability alone does not provide it.
+
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.
