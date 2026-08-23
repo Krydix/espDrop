@@ -146,17 +146,16 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
   `fe80::a4ed:54ff:fe02:5b4e`, and advertised port 8770. The successful
   artifact is
   [`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
-- [ ] Establish TCP to the discovered AirDrop endpoint. The current direct
-  peer run used the complete advertised endpoint above and timed out with
-  `ETIMEDOUT` (116). A diagnostic repeat proved that lwIP generated five
-  checksum-valid SYNs to port 8770 and espDrop submitted them in five guarded
-  common windows; no SYN-ACK, RST, or other inbound TCP segment appeared. A
-  native `nc` control from this Mac's `awdl0` also timed out to the same live
-  endpoint despite a reachable permanent neighbor entry. This run therefore
-  lacks a receiver-ready positive control and does not establish an ESP-only
-  TCP defect. Repeat only after native macOS can reach the selected receiver,
-  then compare SYN/SYN-ACK behavior. Evidence is in
-  [`lab/2026-08-23-awdl-tcp-syn-boundary.json`](lab/2026-08-23-awdl-tcp-syn-boundary.json).
+- [x] Establish TCP to a dynamically discovered AirDrop endpoint. In the
+  retained 30-second run, espDrop reconstructed receiver
+  `ae0ae0a8304e._airdrop._tcp.local` at
+  `fe80::50f4:36ff:feb8:fdf5` port 8770, emitted one checksum-valid SYN, saw
+  four SYN-ACK observations, and completed the lwIP socket connection with
+  error 0. All six TCP transmissions radio-completed. The earlier timeout is
+  retained as a receiver-unavailable negative control; a raw macOS `nc` probe
+  also timed out immediately before this successful ESP run and is therefore
+  not a valid AirDrop readiness gate. Evidence is in
+  [`lab/2026-08-23-awdl-tcp-connect.json`](lab/2026-08-23-awdl-tcp-connect.json).
 - [ ] Confirm TLS versions, cipher, certificate requirements, and scoping.
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
 - [ ] Confirm TransferID and connection-reuse requirements.

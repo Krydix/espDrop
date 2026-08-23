@@ -60,9 +60,24 @@ the raw receive path saw no SYN-ACK, RST, or other TCP segment. Crucially, a
 native `nc` attempt from this Mac's active `awdl0` also timed out to the same
 endpoint while the neighbor entry was reachable. The retained run is therefore
 a receiver-unavailable negative control, not proof of an ESP TCP framing bug.
-The next TCP run requires a native Apple positive control immediately before
-flashing the bounded lab. Evidence is in
+Evidence is in
 [`lab/2026-08-23-awdl-tcp-syn-boundary.json`](lab/2026-08-23-awdl-tcp-syn-boundary.json).
+
+**TCP CONFIRMED ON HARDWARE on 2026-08-23:** a later 30-second run dynamically
+selected AirDrop peer `52:f4:36:b8:fd:f5`, reconstructed
+`ae0ae0a8304e._airdrop._tcp.local` at
+`fe80::50f4:36ff:feb8:fdf5` port 8770, and completed the socket connection.
+lwIP emitted one checksum-valid SYN; the receive path classified four SYN-ACK
+observations and no reset; and all six TCP segments transmitted by the ESP
+reported radio success. No NDP admission exchange was required.
+
+The Mac's raw `nc` probe to that advertised receiver had timed out immediately
+before the successful ESP run. DNS-SD resolution with the native
+`IncludeAWDL` flag did prove that the service was live, but raw TCP from `nc`
+is not a reliable AirDrop readiness gate. This result closes the AWDL TCP
+boundary. TLS and AirDrop application requests remain separate work. Compact
+evidence is in
+[`lab/2026-08-23-awdl-tcp-connect.json`](lab/2026-08-23-awdl-tcp-connect.json).
 
 ## Phase 1 gates
 

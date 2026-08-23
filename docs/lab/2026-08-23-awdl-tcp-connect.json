@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "stock-iPhone AirDrop TCP connection over the ESP32-S3 AWDL netif",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "sourceHead": "7f7f9c2",
+    "labBinarySha256": "b814289941c8ee6e5b63beffbf782610cdf28d548a74e2e7fe85bf3250085c14",
+    "normalBuildTransmitEnabled": false
+  },
+  "receiver": {
+    "peerMac": "52:f4:36:b8:fd:f5",
+    "instance": "ae0ae0a8304e._airdrop._tcp.local",
+    "host": "f7b96061-8fe2-4386-8598-1cf48f14feb1.local",
+    "ipv6": "fe80::50f4:36ff:feb8:fdf5",
+    "port": 8770,
+    "txt": "flags=111611"
+  },
+  "nativeDiscoveryControl": {
+    "interface": "awdl0",
+    "includeAwdlBrowse": true,
+    "advertisedInstances": 3,
+    "receiverResolved": true,
+    "rawTcpProbeToReceiver": "Operation timed out",
+    "interpretation": "A raw nc probe is not a valid AirDrop readiness gate: the ESP connected to the same advertised receiver minutes later."
+  },
+  "espBoundedRun": {
+    "durationSeconds": 30,
+    "scheduledWindows": 14,
+    "windowLatenessUs": {"minimum": 1, "maximum": 2},
+    "actionRadioSuccess": 14,
+    "netifTxRadioSuccess": 21,
+    "netifTxRadioFailed": 0,
+    "netifRxInjected": 14,
+    "netifRxDropped": 0,
+    "mdnsQueries": 6,
+    "mdnsResponses": 9,
+    "completeAirdropServices": 2,
+    "tcpAttempts": 1,
+    "tcpConnected": 1,
+    "tcpSourcePort": 55516,
+    "tcpDestinationPort": 8770,
+    "tcpSynSubmitted": 1,
+    "tcpSynChecksumValid": 1,
+    "tcpTxSegments": 6,
+    "tcpTxRadioSuccess": 6,
+    "tcpTxRadioFailed": 0,
+    "tcpRxSegments": 5,
+    "tcpSynAckObserved": 4,
+    "tcpResetObserved": 0,
+    "connectResult": "connected",
+    "connectError": 0
+  },
+  "result": {
+    "confirmed": "An ESP32-S3 completed a real TCP three-way handshake with a stock iPhone's dynamically discovered AirDrop service through espDrop's synchronized AWDL data path and lwIP netif.",
+    "notConfirmed": "TLS, AirDrop /Discover, /Ask, /Upload, sustained synchronization, and file transfer were not attempted.",
+    "nextFocus": "Implement a bounded TLS client probe using OpenDrop's verified AirDrop endpoint behavior, retain certificate and handshake diagnostics, then progress to /Discover."
+  }
+}
