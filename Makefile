@@ -39,7 +39,7 @@ help:
 		'  make flash-monitor PORT=... Build, flash, and monitor' \
 		'  make ports                 Identify attached Espressif USB ports' \
 		'  make test-hardware-awdl PORT=... [DURATION=30]' \
-		'  make lab-awdl-tx-flash PORT=...  Flash bounded 15 s TX experiment' \
+		'  make lab-awdl-tx-flash PORT=...  Flash bounded TX experiment' \
 		'  make lab-awdl-tx-test PORT=...   Flash and capture TX experiment' \
 		'  make lab-awdl-direct-peer-test PORT=...  Test a live AirDrop peer in common windows' \
 		'  make web-installer         Stage the GitHub Pages web flasher' \

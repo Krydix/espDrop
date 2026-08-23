@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "espdrop/airdrop_mdns.h"
+#include "espdrop/airdrop_tls.h"
 #include "espdrop/espdrop.h"
 #include "espdrop/awdl_tx_lab.h"
 #include "freertos/FreeRTOS.h"
@@ -30,6 +31,11 @@
 #define AWDL_MDNS_PORT 5353U
 #define AWDL_MDNS_QUERY_ATTEMPTS 6U
 #define AWDL_MDNS_RESOLVE_BUDGET 1U
+#if CONFIG_ESPDROP_AIRDROP_TLS_LAB
+#define AWDL_MDNS_TASK_STACK_BYTES 12288U
+#else
+#define AWDL_MDNS_TASK_STACK_BYTES 5120U
+#endif
 
 typedef struct {
     esp_netif_driver_base_t base;
@@ -358,6 +364,27 @@ static void probe_airdrop_tcp_service(
              "result=%s error=%d",
              service->instance, service->target, address, service->port,
              result == 0 ? "connected" : "failed", connection_error);
+#if CONFIG_ESPDROP_AIRDROP_TLS_LAB
+    if (result == 0) {
+        ++stats.airdrop_tls_attempts;
+        espdrop_airdrop_tls_result_t tls;
+        const bool tls_connected = espdrop_airdrop_tls_probe(
+            socket_fd, service->target, 6000U, &tls);
+        if (tls_connected) {
+            ++stats.airdrop_tls_connected;
+        }
+        ESP_LOGW(TAG,
+                 "AWDL-AIRDROP-TLS instance=%s result=%s error=%d "
+                 "version=%s cipher=%s verify=0x%08lx peer_cert=%u "
+                 "peer_cert_bytes=%u",
+                 service->instance,
+                 tls_connected ? "connected" : "failed", tls.error,
+                 tls.version, tls.ciphersuite,
+                 (unsigned long)tls.verify_flags,
+                 tls.peer_certificate_present ? 1U : 0U,
+                 (unsigned)tls.peer_certificate_bytes);
+    }
+#endif
     close(socket_fd);
 }
 
@@ -672,7 +699,8 @@ esp_err_t espdrop_awdl_netif_init(const uint8_t self_mac[6])
         return ESP_ERR_NO_MEM;
     }
 #if CONFIG_ESPDROP_AWDL_MDNS_LAB
-    if (xTaskCreate(mdns_task, "awdl_mdns", 5120, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(mdns_task, "awdl_mdns", AWDL_MDNS_TASK_STACK_BYTES,
+                    NULL, 5, NULL) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
 #endif

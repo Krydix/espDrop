@@ -26,8 +26,9 @@ config ESPDROP_AWDL_TX_LAB
     help
         Research-only profile. After observing an OWL-valid MIF, derive and
         seed the peer's RFC4291 link-local mapping, then transmit PSF/MIF and
-        queued IPv6 frames in bounded common windows for no more than 15
-        seconds. Normal and web-flasher builds must leave this disabled.
+        queued IPv6 frames in bounded common windows for 15 seconds. The TLS
+        sub-profile extends that bound to 25 seconds. Normal and web-flasher
+        builds must leave this disabled.
 
 config ESPDROP_AWDL_NETIF
     bool "Attach decoded AWDL IPv6 to an ESP-IDF network interface"
@@ -46,6 +47,17 @@ config ESPDROP_AWDL_MDNS_LAB
         Joins ff02::fb on the AWDL interface and sends six PTR queries for
         _airdrop._tcp.local after the selected peer supplies an OWL-valid MIF
         with version and device class. Only use in the bounded transmit lab.
+
+config ESPDROP_AIRDROP_TLS_LAB
+    bool "Perform one bounded AirDrop TLS client handshake"
+    depends on ESPDROP_AWDL_MDNS_LAB
+    default n
+    help
+        After TCP reaches a dynamically resolved AirDrop receiver, perform one
+        TLS handshake using a lab-only self-signed client certificate. Peer
+        certificate verification is disabled to match OpenDrop's documented
+        Everyone-mode behavior. Normal and web-flasher builds must leave this
+        disabled.
 
 config ESPDROP_AWDL_LAB_TARGET_MAC
     string "AWDL lab endpoint MAC (empty permits auto-selection)"

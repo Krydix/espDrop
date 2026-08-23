@@ -44,6 +44,14 @@ session.
 
 ## Current compatibility hypotheses
 
+**IMPLEMENTED AS AN EXPLICIT LAB PROFILE:** the first TLS client uses mbedTLS
+on the same scoped IPv6 socket that completed the AirDrop TCP proof. Following
+OpenDrop's sender behavior, it presents a self-signed client certificate and
+does not treat the receiver's self-signed certificate as a public-PKI identity.
+It records protocol version, ciphersuite, verification flags, and bounded peer
+certificate metadata. The normal firmware contains neither the lab private key
+nor the active probe. Hardware negotiation is not yet confirmed.
+
 **REFERENCE (iOS 26 capture):** matching the TransferID between `/Ask` and
 `/Upload` was necessary for upload acceptance. The observed Apple-like upload
 used chunked dvzip on a reused connection.

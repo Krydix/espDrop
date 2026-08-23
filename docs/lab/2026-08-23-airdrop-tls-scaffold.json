@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "bounded AirDrop TLS client scaffold and pre-handshake hardware controls",
+  "sourceBase": "d476c04",
+  "implementation": {
+    "transport": "mbedTLS over the already-connected scoped IPv6 socket",
+    "clientCertificate": "public lab-only RSA-2048 self-signed certificate",
+    "receiverVerification": "disabled only in the explicit lab profile",
+    "handshakeTimeoutMs": 6000,
+    "transmitWindowMs": 25000,
+    "normalFirmwareIncludesLabCredential": false,
+    "normalFirmwareTransmitEnabled": false,
+    "capturedFields": [
+      "result",
+      "mbedTLS error",
+      "TLS version",
+      "ciphersuite",
+      "verification flags",
+      "peer-certificate presence",
+      "peer-certificate byte length"
+    ]
+  },
+  "upstreamBehavior": {
+    "source": "OpenDrop opendrop/config.py and opendrop/client.py",
+    "observed": "OpenDrop presents a self-signed client certificate, accepts a self-signed receiver certificate, scopes HTTPS to AWDL, and reuses one connection for AirDrop requests.",
+    "copiedCode": false
+  },
+  "verification": {
+    "hostTests": "pass",
+    "pythonCaptureSyntax": "pass",
+    "normalEspIdfBuild": "pass",
+    "tlsLabEspIdfBuild": "pass",
+    "passiveImageExcludesTlsLogAndCredential": true
+  },
+  "hardwareControls": [
+    {
+      "profile": "dynamic target",
+      "receiver": "52:f4:36:b8:fd:f5",
+      "result": "TCP timeout before TLS",
+      "tcpSynRadioSuccess": 5,
+      "tcpSynAck": 0,
+      "tlsAttempts": 0
+    },
+    {
+      "profile": "dynamic target",
+      "selected": "a6:ed:54:02:5b:4e",
+      "resolvedReceiver": "52:f4:36:b8:fd:f5",
+      "result": "safety filter rejected mismatched receiver",
+      "tlsAttempts": 0
+    },
+    {
+      "profile": "generated-build pin to 52:f4:36:b8:fd:f5",
+      "result": "unrelated elected synchronization parent left no usable target schedule; lab transmitted nothing",
+      "tlsAttempts": 0
+    }
+  ],
+  "result": {
+    "confirmed": "The lab-only TLS client, diagnostics, build isolation, and bounded 25-second transport window compile and pass local verification. Three hardware controls failed safely before TLS and emitted no TLS handshake.",
+    "notConfirmed": "No TLS record was exchanged with an iPhone, so the negotiated protocol, ciphersuite, receiver certificate, and client-certificate acceptance remain unknown.",
+    "nextFocus": "Repeat while the previously reachable receiver is accepting TCP; retain the first AWDL-AIRDROP-TLS result without changing TLS policy or sending /Discover."
+  }
+}

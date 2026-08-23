@@ -24,14 +24,19 @@
 #include "esp_private/wifi.h"
 #endif
 
+#if CONFIG_ESPDROP_AIRDROP_TLS_LAB
+#define AWDL_TX_LAB_WINDOW_MS 25000U
+#define AWDL_TX_LAB_PROBE_LIMIT 24U
+#else
 #define AWDL_TX_LAB_WINDOW_MS 15000U
+#define AWDL_TX_LAB_PROBE_LIMIT 14U
+#endif
 #if CONFIG_ESPDROP_AWDL_MDNS_LAB && \
     !CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
 #define AWDL_TX_LAB_START_DELAY_MS 8000U
 #else
 #define AWDL_TX_LAB_START_DELAY_MS 1500U
 #endif
-#define AWDL_TX_LAB_PROBE_LIMIT 14U
 #define AWDL_TX_LAB_CHANNEL_WINDOW_GUARD_US 4000U
 #define AWDL_TX_LAB_AWDL_SEQUENCE_OFFSET 34U
 #define AWDL_TX_LAB_ELECTION_PEERS ESPDROP_AWDL_ELECTION_MAX_PEERS
@@ -378,7 +383,8 @@ static void lab_tx_task(void *argument)
              "netif_rx_dropped=%lu mdns_queries=%lu mdns_packets=%lu "
              "mdns_responses=%lu mdns_services=%lu "
              "mdns_complete_services=%lu airdrop_tcp_attempts=%lu "
-             "airdrop_tcp_connected=%lu peer_mappings=%lu "
+             "airdrop_tcp_connected=%lu airdrop_tls_attempts=%lu "
+             "airdrop_tls_connected=%lu peer_mappings=%lu "
              "peer_mapping_failures=%lu tcp_tx_segments=%lu "
              "tcp_tx_syn=%lu tcp_tx_radio_success=%lu "
              "tcp_tx_radio_failed=%lu tcp_rx_segments=%lu "
@@ -412,6 +418,8 @@ static void lab_tx_task(void *argument)
              (unsigned long)netif.mdns_complete_services,
              (unsigned long)netif.airdrop_tcp_attempts,
              (unsigned long)netif.airdrop_tcp_connected,
+             (unsigned long)netif.airdrop_tls_attempts,
+             (unsigned long)netif.airdrop_tls_connected,
              (unsigned long)netif.peer_mappings,
              (unsigned long)netif.peer_mapping_failures,
              (unsigned long)netif.tcp_tx_segments,
@@ -459,7 +467,8 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
     (void)strncpy(device_name, name, sizeof(device_name) - 1U);
     ESP_LOGW(TAG,
              "lab transmit profile armed; waits for a valid MIF, then sends "
-             "for at most 15 seconds");
+             "for at most %u seconds",
+             (unsigned)(AWDL_TX_LAB_WINDOW_MS / 1000U));
     if (has_target_mac) {
         ESP_LOGW(TAG,
                  "lab target=%02x:%02x:%02x:%02x:%02x:%02x",

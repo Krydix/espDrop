@@ -157,6 +157,16 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
   not a valid AirDrop readiness gate. Evidence is in
   [`lab/2026-08-23-awdl-tcp-connect.json`](lab/2026-08-23-awdl-tcp-connect.json).
 - [ ] Confirm TLS versions, cipher, certificate requirements, and scoping.
+  The bounded TLS 1.2 client is implemented behind
+  `CONFIG_ESPDROP_AIRDROP_TLS_LAB`. It presents an explicitly public lab-only
+  RSA self-signed certificate, accepts the receiver's self-signed certificate
+  to mirror OpenDrop's Everyone-mode behavior, and records the negotiated
+  version/cipher plus bounded certificate metadata. Normal firmware excludes
+  the credential and the probe. Three initial hardware controls stopped before
+  TLS because TCP was unavailable, target/endpoint identity differed, or the
+  selected schedule was unavailable; none weakens TLS policy or probes a
+  different receiver. Evidence is in
+  [`lab/2026-08-23-airdrop-tls-scaffold.json`](lab/2026-08-23-airdrop-tls-scaffold.json).
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
 - [ ] Confirm TransferID and connection-reuse requirements.
 - [ ] Confirm cpio versus dvzip by file type.

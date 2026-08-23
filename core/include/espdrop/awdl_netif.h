@@ -36,6 +36,8 @@ typedef struct {
     uint32_t mdns_complete_services;
     uint32_t airdrop_tcp_attempts;
     uint32_t airdrop_tcp_connected;
+    uint32_t airdrop_tls_attempts;
+    uint32_t airdrop_tls_connected;
     uint32_t tcp_tx_segments;
     uint32_t tcp_tx_syn;
     uint32_t tcp_tx_radio_success;

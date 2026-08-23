@@ -249,6 +249,16 @@ AIRDROP_TCP = re.compile(
     re.IGNORECASE,
 )
 
+AIRDROP_TLS = re.compile(
+    r"AWDL-AIRDROP-TLS instance=(?P<instance>[^ ]+) "
+    r"result=(?P<result>[^ ]+) error=(?P<error>-?\d+) "
+    r"version=(?P<version>[^ ]+) cipher=(?P<cipher>[^ ]+) "
+    r"verify=(?P<verify>0x[0-9a-f]+) "
+    r"peer_cert=(?P<peer_cert>\d+) "
+    r"peer_cert_bytes=(?P<peer_cert_bytes>\d+)",
+    re.IGNORECASE,
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -300,6 +310,7 @@ def main() -> None:
     mdns_services = []
     mdns_endpoints = []
     airdrop_tcp = []
+    airdrop_tls = []
     boot_lines = []
     with open_without_reset(args.port, timeout=0.25) as connection:
         if args.reset:
@@ -545,6 +556,16 @@ def main() -> None:
                 tcp_probe["port"] = int(tcp_probe["port"])
                 tcp_probe["error"] = int(tcp_probe["error"])
                 airdrop_tcp.append(tcp_probe)
+            tls_match = AIRDROP_TLS.search(line)
+            if tls_match:
+                tls_probe = tls_match.groupdict()
+                tls_probe["error"] = int(tls_probe["error"])
+                tls_probe["verify"] = int(tls_probe["verify"], 16)
+                tls_probe["peer_cert"] = int(tls_probe["peer_cert"])
+                tls_probe["peer_cert_bytes"] = int(
+                    tls_probe["peer_cert_bytes"]
+                )
+                airdrop_tls.append(tls_probe)
 
     unique_sources = sorted({item["source"] for item in frames})
     raw_captures = []
@@ -614,6 +635,7 @@ def main() -> None:
             "airdropServices": mdns_services,
             "airdropEndpoints": mdns_endpoints,
             "airdropTcp": airdrop_tcp,
+            "airdropTls": airdrop_tls,
         },
         "bootLogPrefix": boot_lines,
     }
