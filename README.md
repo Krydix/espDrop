@@ -17,10 +17,10 @@ The target interaction is:
 No app, account, Internet connection, infrastructure Wi-Fi, QR upload page, or
 cloud service.
 
-> **Research status:** the repository builds and runs a channel-6 AWDL probe,
-> an opt-in bounded action-frame transmit lab, an ephemeral peer table, and the
-> TapDrop correlation/session foundation. It does **not** yet complete an
-> AirDrop transfer or bidirectional IP link. See
+> **Research status:** the ESP32-S3 has completed a bounded ICMPv6 round trip
+> with a stock iPhone over AWDL. The repository also contains an ephemeral peer
+> table and the TapDrop correlation/session foundation. It does **not** yet
+> complete an AirDrop file transfer. See
 > [the unknowns ledger](docs/unknowns.md) for evidence-backed status.
 
 ## What exists now
@@ -31,8 +31,10 @@ cloud service.
   profile (disabled in normal and web-flasher builds)
 - host-tested AWDL/IPv6 Neighbor Solicitation framing; macOS accepted it and
   installed the ESP as a temporary `awdl0` IPv6 neighbor
-- host-tested directed ICMPv6 Echo framing; four requests radio-completed
-  toward macOS, while reverse AWDL data decoding remains the active gate
+- a hardware-proven raw IPv6 round trip with a stock iPhone: its directed
+  Neighbor Advertisement and matching Echo Reply were decoded on the S3
+- verbatim preservation of a peer's modern 16-slot AWDL channel sequence,
+  which was the admission requirement missing from the earlier probes
 - bounded ephemeral BLE/AWDL/AirDrop peer model
 - TapDrop scoring based on timing, appearance, cross-layer observation, and
   RSSI

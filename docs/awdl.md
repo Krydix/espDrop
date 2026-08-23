@@ -29,14 +29,17 @@ The AWDL milestone is deliberately split:
 1. **COMPLETE:** capture Apple AWDL action frames on channel 6.
 2. **COMPLETE:** parse peer address, synchronization parameters, election data,
    and channel sequence without transmitting.
-3. **COMPLETE FOR MAC PEER:** emit synchronized PSF/MIF action frames and
-   observe the Apple peer admit the ESP after directed data.
-4. **COMPLETE FOR MAC PEER:** inject unicast AWDL/IPv6 data and confirm it
-   independently from macOS neighbor state.
-5. Attach an ESP-IDF netif with a link-local IPv6 address.
-6. Pass ICMPv6 echo in both directions.
-7. Pass UDP multicast on port 5353 in both directions.
-8. Run for 30 minutes without schedule drift, watchdog reset, or peer loss.
+3. **COMPLETE FOR MAC AND IPHONE PEERS:** emit synchronized PSF/MIF action
+   frames and observe an Apple peer admit the ESP after directed data.
+4. **COMPLETE FOR MAC AND IPHONE PEERS:** inject unicast AWDL/IPv6 data and
+   confirm Apple-side processing.
+5. **COMPLETE AT THE RAW FRAME BOUNDARY:** form and decode link-local IPv6 in
+   both directions.
+6. **COMPLETE:** pass an ICMPv6 Echo Request/Reply round trip with a stock
+   iPhone.
+7. Attach the proven frame path to an ESP-IDF netif.
+8. Pass UDP multicast on port 5353 in both directions.
+9. Run for 30 minutes without schedule drift, watchdog reset, or peer loss.
 
 M1 is reached only at gate 6. AirDrop work starts after gate 7.
 
@@ -151,6 +154,28 @@ TLVs or state transitions required beyond the legacy OWL-compatible subset.
 Compact evidence is preserved in
 [`lab/2026-08-23-awdl-scheduled-reverse.json`](lab/2026-08-23-awdl-scheduled-reverse.json).
 
+## Verbatim channel-sequence result
+
+**CONFIRMED on 2026-08-23 against a stock iPhone:** the admission failure was
+caused by espDrop advertising a synthetic all-channel-6 sequence while using
+the selected peer's real sequence only for local scheduling. Current iOS 26
+interoperability research independently reports that Apple peers reject this
+kind of pinned sequence. espDrop now preserves the observed encoding,
+duplicate/step/fill fields, all 16 channels, and their operating classes in
+both advertised sequence locations.
+
+In the bounded hardware run, the selected iPhone advertised
+`44,44,44,0,0,0,0,0,6,44,44,0,0,0,0,0`. espDrop copied it verbatim and sent
+14 MIF/NS/Echo probe groups in the channel-6 windows. The iPhone then emitted
+two QoS AWDL data frames directly to the ESP MAC: one IPv6 Neighbor
+Advertisement and one matching ICMPv6 Echo Reply. The ESP decoded both.
+
+This is the first confirmed bidirectional IPv6 exchange between the stock
+iPhone and ESP32-S3 and completes the raw-link M1 proof criterion. Production
+netif integration, bidirectional mDNS, and endurance remain separate gates.
+Compact evidence is preserved in
+[`lab/2026-08-23-awdl-verbatim-sequence.json`](lab/2026-08-23-awdl-verbatim-sequence.json).
+
 ## Timing model
 
 **CONFIRMED by the OWL research:** AWDL divides time into availability windows
@@ -171,11 +196,10 @@ callback.
 - **PARTIALLY CONFIRMED:** current Apple devices expose AWDL action traffic on
   channel 6 at high volume. Whether channel-6 availability windows are long
   enough for reliable file transfer remains unknown.
-- **PARTIALLY CONFIRMED:** ESP-IDF can radio-complete bounded AWDL management
-  action frames without driver error. Scheduled raw unicast AWDL/IPv6 now
-  completes reliably in advertised channel-6 windows, but macOS did not emit a
-  reverse data frame after 14 Neighbor Solicitations and 14 Echo Requests.
-  Current peer admission and reverse data-frame reception remain unknown.
+- **CONFIRMED FOR A BOUNDED RUN:** ESP-IDF can radio-complete bounded AWDL
+  management/data frames, and a stock iPhone returns directed IPv6 after the
+  ESP advertises the observed peer channel sequence verbatim. Reliability and
+  sustained throughput remain unknown.
 - **UNKNOWN:** sustainable bidirectional throughput under BLE coexistence and
   channel switching.
 - **UNKNOWN:** whether an infrastructure STA connection can coexist with AWDL.

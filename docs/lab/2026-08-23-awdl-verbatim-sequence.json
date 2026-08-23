@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "startedAt": "2026-08-23T01:00:52+00:00",
+  "localDate": "2026-08-23",
+  "durationSeconds": 28,
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "ipv6LinkLocal": "fe80::1edb:d4ff:fe42:3fa0",
+    "channel": 6,
+    "profile": "CONFIG_ESPDROP_AWDL_TX_LAB=y",
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "applePeer": {
+    "kind": "stock iPhone with AirDrop photo share sheet open",
+    "identityBasis": "the Mac awdl0 peer was independently identified as ea:33:2c:82:f5:7f; the target was a distinct ephemeral peer present during the user-controlled iPhone share-sheet session",
+    "mac": "66:59:c4:f5:8a:af",
+    "rssiDbm": -58,
+    "electionDistance": 0,
+    "masterMetric": 516
+  },
+  "advertisedChannelSequence": {
+    "encoding": 3,
+    "duplicateCount": 0,
+    "stepCount": 3,
+    "fillChannel": 65535,
+    "channels": [44, 44, 44, 0, 0, 0, 0, 0, 6, 44, 44, 0, 0, 0, 0, 0],
+    "behavior": "copied verbatim from the selected peer MIF into both the embedded synchronization sequence and standalone channel-sequence TLV"
+  },
+  "transmit": {
+    "scheduledChannel6Windows": 14,
+    "measuredLatenessMicroseconds": {
+      "minimum": 2,
+      "maximum": 2
+    },
+    "actionFrames": {
+      "attempted": 14,
+      "radioSuccess": 14,
+      "radioFailed": 0
+    },
+    "neighborSolicitations": {
+      "attempted": 14,
+      "radioSuccess": 1,
+      "radioFailed": 13
+    },
+    "echoRequests": {
+      "attempted": 14,
+      "radioSuccess": 3,
+      "radioFailed": 11
+    }
+  },
+  "espReceiveObservation": {
+    "rawDataFrames": 45,
+    "framesToSelf": 2,
+    "framesWithAwdlBssid": 7,
+    "decodedAwdlDataFrames": 7,
+    "decodedIpv6Frames": 7,
+    "neighborAdvertisements": 1,
+    "echoReplies": 1,
+    "directedFrames": [
+      {
+        "source": "66:59:c4:f5:8a:af",
+        "destination": "1c:db:d4:42:3f:a0",
+        "qos": true,
+        "icmpv6Type": 136,
+        "meaning": "Neighbor Advertisement"
+      },
+      {
+        "source": "66:59:c4:f5:8a:af",
+        "destination": "1c:db:d4:42:3f:a0",
+        "qos": true,
+        "icmpv6Type": 129,
+        "echoIdentifier": 60673,
+        "echoSequence": 1,
+        "meaning": "Echo Reply"
+      }
+    ]
+  },
+  "result": {
+    "confirmed": "Advertising the selected peer's observed channel sequence verbatim caused the stock iPhone to emit a Neighbor Advertisement and matching Echo Reply directly to the ESP32-S3. This proves bidirectional raw IPv6 over AWDL on the target hardware.",
+    "notConfirmed": "The raw AWDL path is not yet attached to an ESP-IDF netif, mDNS has not passed bidirectionally, and sustained operation has not been measured.",
+    "nextFocus": "Attach the proven frame path to an ESP-IDF netif and exchange AWDL mDNS on UDP port 5353."
+  }
+}

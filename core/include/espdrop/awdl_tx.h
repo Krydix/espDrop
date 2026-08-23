@@ -35,7 +35,12 @@ typedef struct {
     uint8_t presence_mode;
     uint8_t channel;
     uint8_t peer_channel_count;
+    uint8_t peer_channel_encoding;
+    uint8_t peer_channel_duplicate_count;
+    uint8_t peer_channel_step_count;
+    uint16_t peer_channel_fill;
     uint8_t peer_channels[ESPDROP_AWDL_MAX_CHANNELS];
+    uint8_t peer_operating_classes[ESPDROP_AWDL_MAX_CHANNELS];
     uint32_t distance_to_master;
     uint32_t master_metric;
     uint32_t self_metric;

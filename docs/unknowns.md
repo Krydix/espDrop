@@ -44,13 +44,16 @@ These hashes are research provenance, not dependencies in release firmware.
 - [x] Observe an Apple peer act upon ESP traffic; after a valid AWDL/IPv6
   Neighbor Solicitation, macOS installed the ESP's exact link-local/MAC pair
   as a previously absent `awdl0` neighbor.
-- [ ] Reproduce peer admission against the stock iPhone rather than the Mac.
+- [x] Reproduce peer admission against the stock iPhone; after espDrop echoed
+  its 16-slot channel sequence verbatim, the iPhone returned a Neighbor
+  Advertisement and matching Echo Reply directly to the ESP MAC.
 - [ ] Maintain channel-6 synchronization for 30 minutes.
-- [ ] Attach link-local IPv6 through an ESP-IDF netif.
+- [ ] Attach the proven raw link-local IPv6 path through an ESP-IDF netif.
 - [x] Radio-complete ICMPv6 Echo Requests ESP → Mac; 4/20 succeeded in the
   first classified bounded run and 14/14 succeeded after channel-window
-  scheduling, but no reply was observed.
-- [ ] ICMPv6 ESP → iPhone.
+  scheduling, but no reply was observed in those pinned-sequence runs.
+- [x] ICMPv6 ESP → iPhone; a bounded run received the matching type-129 Echo
+  Reply after advertising the iPhone's observed sequence verbatim.
 - [ ] ICMPv6 iPhone → ESP.
 - [ ] mDNS multicast in both directions.
 - [ ] Record loss, schedule drift, heap high-water mark, and watchdog status.
@@ -96,8 +99,11 @@ Neighbor Solicitations and 14/14 Echo Requests radio-completed with 1–2
 microseconds measured lateness. The transmit and receive paths now use Apple's
 SNAP OUI `00:17:f2`; the receive decoder covers non-QoS, QoS, and A-MSDU forms.
 The ESP observed no data frame addressed to itself or carrying the AWDL BSSID,
-so the reverse decoder was not hiding a reply. Reverse IPv6 remains unproven;
-current Apple peer admission is the next investigation boundary.
+so the reverse decoder was not hiding a reply. A following run found the
+admission boundary: advertising the peer's channel sequence verbatim produced
+one directed Neighbor Advertisement and one matching Echo Reply from the stock
+iPhone. Raw bidirectional IPv6 is now proven; ESP-IDF netif integration and
+mDNS are next.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

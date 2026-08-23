@@ -52,18 +52,26 @@ static size_t bounded_string_length(const char *value, size_t maximum)
 
 static bool state_is_valid(const espdrop_awdl_tx_state_t *state);
 
-static void make_channel_sequence(uint8_t *value, size_t padding, uint8_t channel)
+static bool make_channel_sequence(
+    uint8_t *value,
+    size_t padding,
+    const espdrop_awdl_tx_state_t *state)
 {
     memset(value, 0, 38U + padding);
-    value[0] = 15U;
-    value[1] = 3U;
-    value[2] = 0U;
-    value[3] = 3U;
-    put_le16(value + 4, 0xffffU);
-    for (size_t index = 0; index < ESPDROP_AWDL_MAX_CHANNELS; ++index) {
-        value[6U + index * 2U] = channel;
-        value[7U + index * 2U] = 0x51U;
+    if (state == NULL || state->peer_channel_count != ESPDROP_AWDL_MAX_CHANNELS ||
+        state->peer_channel_encoding != 3U) {
+        return false;
     }
+    value[0] = (uint8_t)(state->peer_channel_count - 1U);
+    value[1] = state->peer_channel_encoding;
+    value[2] = state->peer_channel_duplicate_count;
+    value[3] = state->peer_channel_step_count;
+    put_le16(value + 4, state->peer_channel_fill);
+    for (size_t index = 0; index < state->peer_channel_count; ++index) {
+        value[6U + index * 2U] = state->peer_channels[index];
+        value[7U + index * 2U] = state->peer_operating_classes[index];
+    }
+    return true;
 }
 
 static uint8_t *append_tlv(uint8_t *output, uint8_t type, uint16_t length)
@@ -128,8 +136,16 @@ bool espdrop_awdl_tx_state_from_mif(
     }
     if (peer_sequence != NULL) {
         state->peer_channel_count = peer_sequence->count;
+        state->peer_channel_encoding = peer_sequence->encoding;
+        state->peer_channel_duplicate_count =
+            peer_sequence->duplicate_count;
+        state->peer_channel_step_count = peer_sequence->step_count;
+        state->peer_channel_fill = peer_sequence->fill_channel;
         memcpy(state->peer_channels, peer_sequence->channels,
                sizeof(state->peer_channels));
+        memcpy(state->peer_operating_classes,
+               peer_sequence->operating_classes,
+               sizeof(state->peer_operating_classes));
     }
     state->distance_to_master =
         mif->election_v2.distance_to_master + 1U;
@@ -191,6 +207,8 @@ static bool state_is_valid(const espdrop_awdl_tx_state_t *state)
            !mac_is_zero(state->master) && state->aw_period_tu != 0U &&
            state->presence_mode != 0U &&
            state->presence_mode <= ESPDROP_AWDL_MAX_CHANNELS &&
+           state->peer_channel_count == ESPDROP_AWDL_MAX_CHANNELS &&
+           state->peer_channel_encoding == 3U &&
            state->channel >= 1U && state->channel <= 13U;
 }
 
@@ -284,7 +302,9 @@ espdrop_awdl_build_result_t espdrop_awdl_build_action(
     value[27] = state->presence_mode;
     put_le16(value + 29, current_aw);
     put_le16(value + 31, current_aw);
-    make_channel_sequence(value + 33, 2U, state->channel);
+    if (!make_channel_sequence(value + 33, 2U, state)) {
+        return ESPDROP_AWDL_BUILD_INVALID_STATE;
+    }
     cursor += 3U + AWDL_SYNC_VALUE_BYTES;
 
     value = append_tlv(cursor, 5U, AWDL_ELECTION_V1_VALUE_BYTES);
@@ -296,7 +316,9 @@ espdrop_awdl_build_result_t espdrop_awdl_build_action(
     cursor += 3U + AWDL_ELECTION_V1_VALUE_BYTES;
 
     value = append_tlv(cursor, 18U, AWDL_CHANNEL_VALUE_BYTES);
-    make_channel_sequence(value, 3U, state->channel);
+    if (!make_channel_sequence(value, 3U, state)) {
+        return ESPDROP_AWDL_BUILD_INVALID_STATE;
+    }
     cursor += 3U + AWDL_CHANNEL_VALUE_BYTES;
 
     value = append_tlv(cursor, 24U, AWDL_ELECTION_V2_VALUE_BYTES);

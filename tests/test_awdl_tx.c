@@ -34,12 +34,17 @@ int main(void)
         },
         .channel_sequence = {
             .count = 16,
+            .encoding = 3,
+            .step_count = 3,
+            .fill_channel = 0xffff,
         },
     };
     for (size_t index = 0; index < 16U; ++index) {
         observed.channel_sequence.channels[index] = 44U;
+        observed.channel_sequence.operating_classes[index] = 0x80U;
     }
     observed.channel_sequence.channels[8] = 6U;
+    observed.channel_sequence.operating_classes[8] = 0x51U;
     memcpy(observed.election_v2.master, source, sizeof(source));
     memcpy(observed.election_v2.sync_master, source, sizeof(source));
 
@@ -54,7 +59,9 @@ int main(void)
     assert(state.self_metric == 509);
     assert(state.channel == 6);
     assert(state.peer_channel_count == 16U);
+    assert(state.peer_channel_encoding == 3U);
     assert(state.peer_channels[8] == 6U);
+    assert(state.peer_operating_classes[8] == 0x51U);
     assert(state.aw_sequence_base == 64288);
     assert(state.sync_reference_us == 1000000ULL - 29ULL * 1024ULL);
     assert(state.peer_time_observed_us == 1000000ULL);
@@ -98,13 +105,17 @@ int main(void)
     assert(parsed.sync.next_aw_sequence == 64289);
     assert(parsed.sync.master_channel == 6);
     assert(parsed.sync.has_embedded_channel_sequence);
-    assert(parsed.sync.embedded_channel_sequence.channels[0] == 6);
+    assert(parsed.sync.embedded_channel_sequence.channels[0] == 44);
+    assert(parsed.sync.embedded_channel_sequence.operating_classes[0] ==
+           0x80U);
     assert(parsed.has_election_v1);
     assert(parsed.has_election_v2);
     assert(parsed.election_v2.distance_to_master == 1);
     assert(parsed.election_v2.self_metric == 509);
     assert(parsed.has_channel_sequence);
-    assert(parsed.channel_sequence.channels[15] == 6);
+    assert(parsed.channel_sequence.channels[8] == 6);
+    assert(parsed.channel_sequence.operating_classes[8] == 0x51U);
+    assert(parsed.channel_sequence.channels[15] == 44);
 
     bool found_current_arpa = false;
     bool found_current_version = false;
