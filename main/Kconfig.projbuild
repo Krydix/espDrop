@@ -56,6 +56,16 @@ config ESPDROP_AWDL_LAB_TARGET_MAC
         When set, the transmitter waits for that peer's MIF and follows its
         synchronization/channel sequence. Production builds leave this empty.
 
+config ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
+    bool "Wait for the target to become an AWDL master"
+    depends on ESPDROP_AWDL_TX_LAB
+    default n
+    help
+        Research-only admission experiment. Do not start the bounded transmit
+        task until the selected peer advertises election distance zero. This
+        reproduces the topology of the successful iPhone admission capture.
+        Normal and web-flasher builds must leave this disabled.
+
 config TAPDROP_NFC_FIELD_GPIO
     int "NFC field-detect GPIO (-1 disables hardware input)"
     range -1 48

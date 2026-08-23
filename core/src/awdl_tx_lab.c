@@ -21,7 +21,9 @@
 #endif
 
 #define AWDL_TX_LAB_WINDOW_MS 15000U
-#if CONFIG_ESPDROP_AWDL_MDNS_LAB
+#if CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
+#define AWDL_TX_LAB_START_DELAY_MS 1500U
+#elif CONFIG_ESPDROP_AWDL_MDNS_LAB
 #define AWDL_TX_LAB_START_DELAY_MS 12000U
 #else
 #define AWDL_TX_LAB_START_DELAY_MS 1500U
@@ -60,6 +62,7 @@ static volatile uint32_t echo_radio_completed;
 static volatile uint32_t echo_radio_success;
 static volatile uint32_t echo_radio_failed;
 static volatile uint32_t unknown_data_radio_completed;
+static uint32_t topology_waits;
 
 static bool source_is_selected_peer(const uint8_t source[6])
 {
@@ -458,6 +461,24 @@ void espdrop_awdl_tx_lab_observe_mif(
         memcmp(action->source, target_mac, sizeof(target_mac)) != 0) {
         return;
     }
+#if CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
+    if (!mif->has_election_v2) {
+        return;
+    }
+    if (mif->election_v2.distance_to_master != 0U) {
+        ++topology_waits;
+        if (topology_waits == 1U || topology_waits % 10U == 0U) {
+            ESP_LOGI(TAG,
+                     "TX-LAB-WAIT peer=%02x:%02x:%02x:%02x:%02x:%02x "
+                     "observed_distance=%lu count=%lu",
+                     action->source[0], action->source[1], action->source[2],
+                     action->source[3], action->source[4], action->source[5],
+                     (unsigned long)mif->election_v2.distance_to_master,
+                     (unsigned long)topology_waits);
+        }
+        return;
+    }
+#endif
     espdrop_awdl_tx_state_t candidate;
     if (!espdrop_awdl_tx_state_from_mif(
             &candidate, station_mac, action->source, device_name,
@@ -479,6 +500,14 @@ void espdrop_awdl_tx_lab_observe_mif(
     if (!task_started) {
         task_started = true;
         start_task = true;
+#if CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
+        ESP_LOGW(TAG,
+                 "TX-LAB-TOPOLOGY "
+                 "peer=%02x:%02x:%02x:%02x:%02x:%02x "
+                 "observed_distance=0 result=qualified",
+                 action->source[0], action->source[1], action->source[2],
+                 action->source[3], action->source[4], action->source[5]);
+#endif
     }
     xSemaphoreGive(state_lock);
 

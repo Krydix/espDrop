@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "ipv6LinkLocal": "fe80::1edb:d4ff:fe42:3fa0",
+    "channel": 6,
+    "profile": "CONFIG_ESPDROP_AWDL_TX_LAB=y; CONFIG_ESPDROP_AWDL_MDNS_LAB=y; CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO=y",
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "intendedIphone": {
+    "peer": "a6:ed:54:02:5b:4e",
+    "state": "Photos share sheet open; AirDrop receiver view active",
+    "durationSeconds": 60,
+    "observedDistance": 1,
+    "masterCounts": {
+      "52:f4:36:b8:fd:f5": 50,
+      "ea:33:2c:82:f5:7f": 5
+    },
+    "transmitTaskStarted": false,
+    "radioFramesSubmitted": 0,
+    "result": "The distance-zero gate remained passive as designed."
+  },
+  "masterControl": {
+    "peer": "52:f4:36:b8:fd:f5",
+    "observedDistance": 0,
+    "qualified": true,
+    "scheduledWindows": 14,
+    "actionRadioSuccess": 14,
+    "neighborSolicitationRadioSuccess": 2,
+    "echoRequestRadioSuccess": 2,
+    "neighborAdvertisements": 1,
+    "echoReplies": 2,
+    "admitted": true,
+    "netifFrames": {
+      "observed": 22,
+      "enqueued": 20,
+      "submitted": 20,
+      "radioSuccess": 20,
+      "radioFailed": 0,
+      "receivedInjected": 11,
+      "receivedDropped": 0
+    },
+    "mdns": {
+      "queries": 6,
+      "socketPacketsDuringCapture": 25,
+      "responsesDuringCapture": 11,
+      "ptrInstances": [
+        "1317b6787cb6._airdrop._tcp.local",
+        "152b0903751f._airdrop._tcp.local",
+        "9df4fc4f18c2._airdrop._tcp.local"
+      ],
+      "completeEndpoints": 0
+    },
+    "tcpDiagnostic": {
+      "address": "fe80::50f4:36ff:feb8:fdf5",
+      "port": 8770,
+      "endpointSource": "derived master address plus guessed port",
+      "connected": false,
+      "errno": 116,
+      "errnoName": "ETIMEDOUT"
+    }
+  },
+  "result": {
+    "confirmed": "Election distance zero is a repeatable precondition for admission in this lab: the selected Apple peer returned directed IPv6 evidence, lwIP traffic crossed the AWDL netif bidirectionally, and the ESP socket received AirDrop DNS-SD traffic.",
+    "notConfirmed": "The intended iPhone did not become distance zero, no complete AirDrop endpoint was reconstructed, and TCP to a genuine advertised receiver endpoint was not attempted.",
+    "nextFocus": "Resolve each PTR instance with explicit SRV/TXT/AAAA questions, correlate the intended iPhone to its advertised endpoint, and connect to that scoped address and advertised port inside an admitted topology window."
+  }
+}

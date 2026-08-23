@@ -60,6 +60,13 @@ These hashes are research provenance, not dependencies in release firmware.
 - [x] mDNS multicast in both directions; an ESP-IDF UDP/5353 socket sent six
   `_airdrop._tcp.local` PTR queries and received four DNS responses from two
   Apple AWDL peers through the custom netif.
+- [x] Reproduce peer admission deterministically from the observed AWDL
+  election topology. While the intended iPhone peer advertised distance 1,
+  a distance-zero-only lab stayed passive for two 60-second runs. Retargeting
+  the same bounded profile to the distance-zero master immediately produced
+  one directed Neighbor Advertisement, two matching Echo Replies, 20/20
+  radio-successful lwIP frames, and 25 socket-level mDNS packets during the
+  retained capture.
 - [ ] Record loss, schedule drift, heap high-water mark, and watchdog status.
 
 ## M2/M3 — AirDrop
@@ -77,6 +84,11 @@ These hashes are research provenance, not dependencies in release firmware.
 - [ ] Establish TCP to the discovered AirDrop endpoint. A scoped TCP attempt
   to the confirmed Mac address/port was emitted during the bounded lab but
   ended with `EHOSTUNREACH`; no AWDL neighbor admission occurred in that run.
+  A later distance-zero master control passed admission and emitted a TCP SYN
+  to its derived link-local address using the guessed port 8770, but timed out
+  with `ETIMEDOUT` (116). Three PTR instances were observed afterward, so the
+  next test must resolve each instance's SRV/TXT/AAAA records and use the
+  advertised endpoint rather than the election master plus a fixed port.
 - [ ] Confirm TLS versions, cipher, certificate requirements, and scoping.
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
 - [ ] Confirm TransferID and connection-reuse requirements.
@@ -142,6 +154,20 @@ admission evidence. Consequently the gate submitted zero netif frames and made
 zero TCP or mDNS attempts. This makes the remaining boundary precise:
 repeatable AWDL peer admission/topology comes before AirDrop TCP, and AirDrop
 discoverability alone does not provide it.
+
+The distance-zero follow-up isolated that topology boundary. With the iPhone
+on the Photos share/AirDrop screen, peer `a6:ed:54:02:5b:4e` remained at
+election distance 1 for the full capture and the ESP transmitted nothing. Its
+MIF named `52:f4:36:b8:fd:f5` as master in 50 of 55 observations. The same
+distance-zero-only firmware retargeted to that master qualified immediately:
+the selected peer returned one Neighbor Advertisement and two matching Echo
+Replies, the admission gate opened, and all 20 submitted lwIP frames completed
+successfully at the radio. The socket received 25 mDNS packets (11 responses)
+and found three AirDrop PTR instances. A diagnostic TCP attempt to the master
+at a guessed port 8770 timed out, which is expected evidence against treating
+the AWDL election master as the AirDrop receiver endpoint. Peer admission is
+now repeatable when aligned to election topology; complete DNS-SD endpoint
+resolution is the next boundary.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

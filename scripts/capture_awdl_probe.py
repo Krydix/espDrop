@@ -170,6 +170,20 @@ TX_ADMITTED = re.compile(
     re.IGNORECASE,
 )
 
+TX_TOPOLOGY_WAIT = re.compile(
+    r"TX-LAB-WAIT peer=(?P<peer>[0-9a-f:]+) "
+    r"observed_distance=(?P<observed_distance>\d+) "
+    r"count=(?P<count>\d+)",
+    re.IGNORECASE,
+)
+
+TX_TOPOLOGY = re.compile(
+    r"TX-LAB-TOPOLOGY peer=(?P<peer>[0-9a-f:]+) "
+    r"observed_distance=(?P<observed_distance>\d+) "
+    r"result=(?P<result>[a-z-]+)",
+    re.IGNORECASE,
+)
+
 NETIF_READY = re.compile(
     r"AWDL-NETIF ready if=(?P<interface>\d+) "
     r"ipv6=(?P<ipv6>[^ ]+) mtu=(?P<mtu>\d+)",
@@ -247,6 +261,8 @@ def main() -> None:
     tx_windows = []
     tx_summary = None
     tx_admission = None
+    tx_topology_waits = []
+    tx_topology = None
     tx_reactions = []
     tx_neighbor_solicitations = []
     tx_neighbor_advertisements = []
@@ -327,6 +343,20 @@ def main() -> None:
             tx_admitted_match = TX_ADMITTED.search(line)
             if tx_admitted_match:
                 tx_admission = tx_admitted_match.groupdict()
+            tx_topology_wait_match = TX_TOPOLOGY_WAIT.search(line)
+            if tx_topology_wait_match:
+                topology_wait = tx_topology_wait_match.groupdict()
+                topology_wait["observed_distance"] = int(
+                    topology_wait["observed_distance"]
+                )
+                topology_wait["count"] = int(topology_wait["count"])
+                tx_topology_waits.append(topology_wait)
+            tx_topology_match = TX_TOPOLOGY.search(line)
+            if tx_topology_match:
+                tx_topology = tx_topology_match.groupdict()
+                tx_topology["observed_distance"] = int(
+                    tx_topology["observed_distance"]
+                )
             tx_ns_match = TX_NS.search(line)
             if tx_ns_match:
                 solicitation = tx_ns_match.groupdict()
@@ -455,6 +485,8 @@ def main() -> None:
             "sampledFrames": tx_frames,
             "summary": tx_summary,
             "admission": tx_admission,
+            "topologyWaits": tx_topology_waits,
+            "topology": tx_topology,
             "reactions": tx_reactions,
             "neighborSolicitations": tx_neighbor_solicitations,
             "neighborAdvertisements": tx_neighbor_advertisements,
