@@ -95,6 +95,12 @@ These hashes are research provenance, not dependencies in release firmware.
   decoder. A real ESP socket also decoded Apple PTR traffic into the live
   instance `9df4fc4f18c2._airdrop._tcp.local` without crashing after moving
   parser scratch storage out of the mDNS task stack.
+- [x] Identify AirDrop receiver capability inside AWDL MIF service-response
+  TLVs. The bounded parser recognizes the AWDL DNS compression code for
+  `_airdrop._tcp.local`, distinguishes `_asquic`, records PTR/SRV/TXT counts,
+  and rejects malformed/truncated records. A passive S3 run classified the
+  Mac's nine records with zero errors. The peer table only selects a receiver
+  when exactly one fresh protocol-confirmed candidate exists.
 - [ ] Repeatably reconstruct a complete PTR/SRV/TXT/AAAA receiver in one
   retained hardware artifact. One live run reconstructed the Mac endpoint
   (`fe80::e833:2cff:fe82:f57f`, port 8770), but the capture script then lost

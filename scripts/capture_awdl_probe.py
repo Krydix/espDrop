@@ -44,6 +44,16 @@ MIF_RESULT = re.compile(
     re.IGNORECASE,
 )
 
+MIF_SERVICES = re.compile(
+    r"MIF-SERVICES src=(?P<source>[0-9a-f:]+) "
+    r"result=(?P<result>-?\d+) records=(?P<records>\d+) "
+    r"malformed=(?P<malformed>\d+) ptr=(?P<ptr>\d+) "
+    r"srv=(?P<srv>\d+) txt=(?P<txt>\d+) "
+    r"airdrop=(?P<airdrop>\d+) tcp=(?P<tcp>\d+) "
+    r"udp=(?P<udp>\d+) asquic=(?P<asquic>\d+)",
+    re.IGNORECASE,
+)
+
 TX_FRAME = re.compile(
     r"TX-LAB-FRAME number=(?P<number>\d+) subtype=(?P<subtype>\d+) "
     r"bytes=(?P<bytes>\d+) driver=(?P<driver>[A-Z0-9_]+)",
@@ -272,6 +282,7 @@ def main() -> None:
     diagnostics = []
     raw_mifs = {}
     mif_results = []
+    mif_services = []
     tx_frames = []
     tx_windows = []
     tx_summary = None
@@ -334,6 +345,15 @@ def main() -> None:
             result_match = MIF_RESULT.search(line)
             if result_match:
                 mif_results.append(result_match.groupdict())
+            services_match = MIF_SERVICES.search(line)
+            if services_match:
+                service = services_match.groupdict()
+                for key in (
+                    "result", "records", "malformed", "ptr", "srv",
+                    "txt", "airdrop", "tcp", "udp", "asquic",
+                ):
+                    service[key] = int(service[key])
+                mif_services.append(service)
             tx_frame_match = TX_FRAME.search(line)
             if tx_frame_match:
                 record = tx_frame_match.groupdict()
@@ -509,6 +529,7 @@ def main() -> None:
         "finalDiagnostics": diagnostics[-1] if diagnostics else None,
         "rawMifCaptures": sorted(raw_captures, key=lambda item: item["source"]),
         "mifResults": mif_results,
+        "mifServices": mif_services,
         "txLab": {
             "scheduledWindows": tx_windows,
             "sampledFrames": tx_frames,

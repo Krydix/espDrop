@@ -11,6 +11,7 @@ typedef enum {
     ESPDROP_TABLE_INVALID_ARGUMENT = -1,
     ESPDROP_TABLE_FULL = -2,
     ESPDROP_TABLE_NOT_FOUND = -3,
+    ESPDROP_TABLE_AMBIGUOUS = -4,
 } espdrop_table_result_t;
 
 typedef struct {
@@ -33,6 +34,12 @@ size_t espdrop_peer_table_expire(
 const espdrop_peer_t *espdrop_peer_table_find(
     const espdrop_peer_table_t *table,
     const espdrop_peer_id_t *id);
+
+espdrop_table_result_t espdrop_peer_table_select_unique_airdrop(
+    const espdrop_peer_table_t *table,
+    uint64_t now_ms,
+    uint64_t max_age_ms,
+    const espdrop_peer_t **peer);
 
 bool espdrop_peer_id_equal(
     const espdrop_peer_id_t *left,

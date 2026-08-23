@@ -51,6 +51,10 @@ typedef struct {
     uint8_t channel_count;
     uint8_t channels[ESPDROP_AWDL_CHANNEL_SEQUENCE_MAX];
     uint8_t operating_classes[ESPDROP_AWDL_CHANNEL_SEQUENCE_MAX];
+    uint16_t service_record_count;
+    uint16_t malformed_service_record_count;
+    bool advertises_airdrop;
+    bool advertises_asquic;
 } espdrop_awdl_peer_state_t;
 
 typedef struct {

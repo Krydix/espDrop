@@ -1,6 +1,6 @@
 # AirDrop protocol baseline
 
-Status date: 2026-08-22.
+Status date: 2026-08-23.
 
 Labels used throughout the research notes:
 
@@ -68,6 +68,29 @@ connection-state validation are incomplete.
 For the first embedded milestones, espDrop targets explicit **Everyone for 10
 Minutes** lab sessions and still requires user consent. Contacts Only is not an
 initial success criterion.
+
+## AWDL-embedded receiver advertisements
+
+**CONFIRMED on 2026-08-23:** current Apple MIFs can carry compact DNS-style
+service-response TLVs in addition to ordinary mDNS over IPv6. Record owner
+names use an AWDL compression dictionary; `0xc007` represents
+`_airdrop._tcp.local`. The retained iPhone capture contained three such AirDrop
+records, while a different temporary peer contained only `_asquic._udp.local`.
+Treating every newly appearing or strong AWDL peer as an AirDrop receiver is
+therefore incorrect.
+
+espDrop now parses the bounded record envelope and owner name, recognizes
+compressed and regular AirDrop labels, stores the result on the ephemeral peer,
+and exposes a unique-fresh-receiver selection rule. Zero candidates returns
+not-found; multiple candidates return ambiguous and require further
+correlation or confirmation. A passive S3 run decoded the known Mac's nine
+records as three PTR, three SRV, and three TXT records with zero malformed
+records and correctly marked it as an AirDrop TCP receiver.
+
+The wire layout and compression constants are cross-checked against the
+[Wireshark AWDL dissector](https://gitlab.com/wireshark/wireshark/-/blob/4520e9eb867c2e6969308e3aa4d7304b2bbda157/epan/dissectors/packet-awdl.c).
+Compact local evidence is in
+[`lab/2026-08-23-awdl-service-identification.json`](lab/2026-08-23-awdl-service-identification.json).
 
 ## Implementation rule
 

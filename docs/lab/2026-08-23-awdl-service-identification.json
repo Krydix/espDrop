@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "Passive AWDL service-response decoding and receiver identification",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "channel": 6,
+    "normalBuildTransmitEnabled": false,
+    "radioTransmitObserved": false
+  },
+  "mifAudit": {
+    "espdropTransmitted": {
+      "frameBytes": 290,
+      "tlvCount": 9,
+      "tlvTypes": [4, 5, 18, 24, 6, 7, 16, 12, 21]
+    },
+    "previouslyAdmittingIphone": {
+      "frameBytes": 347,
+      "tlvCount": 10,
+      "tlvTypes": [4, 18, 5, 24, 12, 7, 17, 33, 21, 6],
+      "serviceResponseRecords": 0
+    },
+    "currentDistanceOneIphoneCapture": {
+      "frameBytes": 491,
+      "tlvCount": 13,
+      "serviceResponseRecords": 3,
+      "airdropOwnerEncoding": "0xc007 (_airdrop._tcp.local)"
+    },
+    "nonAirdropSessionCandidate": {
+      "frameBytes": 587,
+      "tlvCount": 13,
+      "serviceResponseRecords": 3,
+      "service": "_asquic._udp.local",
+      "airdropService": false
+    },
+    "conclusion": "Extra Apple capability TLVs are not sufficient evidence for peer admission because the earlier successful exchange used espDrop's same minimal transmitted MIF. Unsupported Apple VHT/device capabilities must not be copied onto ESP32-S3 advertisements."
+  },
+  "passiveHardwareResult": {
+    "peerKind": "known local Mac AWDL peer",
+    "mifBytes": 1180,
+    "tlvCount": 21,
+    "serviceRecords": 9,
+    "malformedRecords": 0,
+    "ptrRecords": 3,
+    "srvRecords": 3,
+    "txtRecords": 3,
+    "airdrop": true,
+    "airdropTcp": true,
+    "airdropUdp": false,
+    "asquic": false
+  },
+  "software": {
+    "boundedServiceRecordParser": true,
+    "compressedAirdropNames": true,
+    "regularLabels": true,
+    "malformedAndTruncatedTests": true,
+    "peerTableAirdropSignal": true,
+    "uniqueFreshReceiverSelection": true,
+    "ambiguousReceiverRejected": true,
+    "hostTestsPassed": true,
+    "passiveFirmwareBuildPassed": true,
+    "boundedLabBuildPassed": true
+  },
+  "result": {
+    "confirmed": "espDrop can distinguish a protocol-confirmed AirDrop receiver advertisement from unrelated Apple AWDL services without using RSSI, names, or persistent identifiers.",
+    "notConfirmed": "This slice does not correlate BLE to AWDL, identify a tapped phone, establish TCP, or transfer a file.",
+    "nextFocus": "Use protocol-confirmed AirDrop receiver candidates as the input to BLE/tap correlation and resolve the selected peer's SRV/TXT/AAAA endpoint."
+  }
+}

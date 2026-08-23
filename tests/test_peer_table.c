@@ -54,6 +54,16 @@ int main(void)
     assert(peer->last_seen_ms == 1200);
     assert(memcmp(peer->awdl_mac, mac, sizeof(mac)) == 0);
     assert(strcmp(peer->display_name, "Test iPhone") == 0);
+    const espdrop_peer_t *selected = NULL;
+    assert(espdrop_peer_table_select_unique_airdrop(
+               &table, 1300U, 500U, &selected) == ESPDROP_TABLE_OK);
+    assert(selected == peer);
+    assert(espdrop_peer_table_select_unique_airdrop(
+               &table, 2000U, 500U, &selected) == ESPDROP_TABLE_NOT_FOUND);
+    assert(selected == NULL);
+    assert(espdrop_peer_table_select_unique_airdrop(
+               &table, 1000U, 500U, &selected) == ESPDROP_TABLE_NOT_FOUND);
+    assert(selected == NULL);
 
     const espdrop_peer_observation_t other = {
         .id = peer_id(2),
@@ -63,12 +73,31 @@ int main(void)
     };
     assert(espdrop_peer_table_observe(&table, &other, NULL) == ESPDROP_TABLE_OK);
     assert(table.count == 2);
+    assert(espdrop_peer_table_select_unique_airdrop(
+               &table, 1300U, 500U, &selected) == ESPDROP_TABLE_OK);
+
+    const espdrop_peer_observation_t second_airdrop = {
+        .id = peer_id(3),
+        .signals = ESPDROP_PEER_SIGNAL_AIRDROP,
+        .rssi = -80,
+        .seen_ms = 1250U,
+        .service_id = "second-service",
+    };
+    assert(espdrop_peer_table_observe(
+               &table, &second_airdrop, NULL) == ESPDROP_TABLE_OK);
+    assert(espdrop_peer_table_select_unique_airdrop(
+               &table, 1300U, 500U, &selected) ==
+           ESPDROP_TABLE_AMBIGUOUS);
+    assert(selected == NULL);
     assert(espdrop_peer_table_expire(&table, 1500, 500) == 1);
-    assert(table.count == 1);
+    assert(table.count == 2);
     assert(espdrop_peer_table_find(&table, &ble.id) != NULL);
 
     const espdrop_peer_observation_t invalid = {0};
     assert(espdrop_peer_table_observe(&table, &invalid, NULL) ==
+           ESPDROP_TABLE_INVALID_ARGUMENT);
+    assert(espdrop_peer_table_select_unique_airdrop(
+               NULL, 0U, 0U, &selected) ==
            ESPDROP_TABLE_INVALID_ARGUMENT);
 
     puts("peer table tests passed");

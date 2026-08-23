@@ -2,6 +2,7 @@
 #include "espdrop/awdl_frame.h"
 #include "espdrop/awdl_data.h"
 #include "espdrop/awdl_netif.h"
+#include "espdrop/awdl_service.h"
 #include "espdrop/awdl_tlv.h"
 #include "espdrop/awdl_tx_lab.h"
 #include "espdrop/espdrop.h"
@@ -109,6 +110,12 @@ static uint8_t sampled_mif_sources[AWDL_CAPTURE_PEERS][6];
 static size_t sampled_mif_source_count;
 static uint8_t detailed_mif_sources[AWDL_CAPTURE_PEERS][6];
 static size_t detailed_mif_source_count;
+typedef struct {
+    bool valid;
+    uint8_t source[6];
+    espdrop_awdl_service_profile_t profile;
+} awdl_service_log_state_t;
+static awdl_service_log_state_t service_log_states[AWDL_CAPTURE_PEERS];
 static uint8_t station_mac[6];
 
 static const uint8_t diagnostic_apple_oui[3] = {0x00, 0x17, 0xf2};
@@ -356,7 +363,9 @@ static espdrop_peer_t *observe_awdl_peer(const awdl_probe_record_t *record)
 static void apply_mif_to_peer(
     const uint8_t source[6],
     const espdrop_awdl_action_t *action,
-    const espdrop_awdl_mif_t *mif)
+    const espdrop_awdl_mif_t *mif,
+    const espdrop_awdl_service_profile_t *services,
+    uint64_t seen_ms)
 {
     espdrop_peer_table_t *table = espdrop_peers();
     if (table == NULL) {
@@ -413,6 +422,19 @@ static void apply_mif_to_peer(
                sizeof(peer->awdl.channels));
         memcpy(peer->awdl.operating_classes, sequence->operating_classes,
                sizeof(peer->awdl.operating_classes));
+    }
+    if (services != NULL) {
+        peer->awdl.service_record_count = services->record_count;
+        peer->awdl.malformed_service_record_count =
+            services->malformed_record_count;
+        peer->awdl.advertises_airdrop = services->has_airdrop;
+        peer->awdl.advertises_asquic = services->has_asquic;
+        if (services->has_airdrop) {
+            peer->signals |= ESPDROP_PEER_SIGNAL_AIRDROP;
+            peer->airdrop_seen_ms = seen_ms;
+            (void)strncpy(peer->service_id, "_airdrop._tcp.local",
+                          sizeof(peer->service_id) - 1U);
+        }
     }
 }
 
@@ -476,6 +498,37 @@ static bool should_log_mif_detail(const uint8_t source[6])
     return true;
 }
 
+static bool should_log_service_profile(
+    const uint8_t source[6],
+    const espdrop_awdl_service_profile_t *profile)
+{
+    awdl_service_log_state_t *free_slot = NULL;
+    for (size_t index = 0U; index < AWDL_CAPTURE_PEERS; ++index) {
+        awdl_service_log_state_t *state = &service_log_states[index];
+        if (!state->valid) {
+            if (free_slot == NULL) {
+                free_slot = state;
+            }
+            continue;
+        }
+        if (memcmp(state->source, source, sizeof(state->source)) != 0) {
+            continue;
+        }
+        if (memcmp(&state->profile, profile, sizeof(*profile)) == 0) {
+            return false;
+        }
+        state->profile = *profile;
+        return true;
+    }
+    if (free_slot == NULL) {
+        return false;
+    }
+    free_slot->valid = true;
+    memcpy(free_slot->source, source, sizeof(free_slot->source));
+    free_slot->profile = *profile;
+    return true;
+}
+
 static void process_mif_capture(const awdl_mif_capture_t *capture)
 {
     espdrop_awdl_action_t action;
@@ -504,9 +557,30 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
         log_raw_capture(capture);
         return;
     }
+    espdrop_awdl_service_profile_t services;
+    const espdrop_awdl_parse_result_t service_result =
+        espdrop_awdl_scan_service_responses(
+            action.tlv_data, action.tlv_length, &services);
+    if (should_log_service_profile(capture->source, &services) ||
+        service_result != ESPDROP_AWDL_PARSE_OK) {
+        ESP_LOGI(TAG,
+                 "MIF-SERVICES src=%02x:%02x:%02x:%02x:%02x:%02x "
+                 "result=%d records=%u malformed=%u ptr=%u srv=%u txt=%u "
+                 "airdrop=%u tcp=%u udp=%u asquic=%u",
+                 capture->source[0], capture->source[1], capture->source[2],
+                 capture->source[3], capture->source[4], capture->source[5],
+                 service_result, services.record_count,
+                 services.malformed_record_count, services.ptr_count,
+                 services.srv_count, services.txt_count,
+                 services.has_airdrop ? 1U : 0U,
+                 services.has_airdrop_tcp ? 1U : 0U,
+                 services.has_airdrop_udp ? 1U : 0U,
+                 services.has_asquic ? 1U : 0U);
+    }
     espdrop_awdl_tx_lab_observe_mif(&action, &mif,
                                     capture->received_at_us);
-    apply_mif_to_peer(capture->source, &action, &mif);
+    apply_mif_to_peer(capture->source, &action, &mif, &services,
+                      capture->received_at_us / 1000U);
     if (!detailed) {
         return;
     }

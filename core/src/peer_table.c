@@ -51,6 +51,35 @@ const espdrop_peer_t *espdrop_peer_table_find(
     return NULL;
 }
 
+espdrop_table_result_t espdrop_peer_table_select_unique_airdrop(
+    const espdrop_peer_table_t *table,
+    uint64_t now_ms,
+    uint64_t max_age_ms,
+    const espdrop_peer_t **peer)
+{
+    if (table == NULL || peer == NULL) {
+        return ESPDROP_TABLE_INVALID_ARGUMENT;
+    }
+    *peer = NULL;
+    for (size_t index = 0U; index < table->count; ++index) {
+        const espdrop_peer_t *candidate = &table->peers[index];
+        if ((candidate->signals & ESPDROP_PEER_SIGNAL_AIRDROP) == 0U) {
+            continue;
+        }
+        const bool fresh = candidate->airdrop_seen_ms <= now_ms &&
+            now_ms - candidate->airdrop_seen_ms <= max_age_ms;
+        if (!fresh) {
+            continue;
+        }
+        if (*peer != NULL) {
+            *peer = NULL;
+            return ESPDROP_TABLE_AMBIGUOUS;
+        }
+        *peer = candidate;
+    }
+    return *peer == NULL ? ESPDROP_TABLE_NOT_FOUND : ESPDROP_TABLE_OK;
+}
+
 static void copy_text(char *destination, size_t capacity, const char *source)
 {
     if (source == NULL || capacity == 0) {

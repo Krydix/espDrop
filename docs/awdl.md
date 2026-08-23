@@ -224,6 +224,27 @@ the fixed-channel lab uses a five-second timeout while the reusable election
 core retains the two-second default. The compact evidence is in
 [`lab/2026-08-23-awdl-dynamic-election.json`](lab/2026-08-23-awdl-dynamic-election.json).
 
+## Service-profile result
+
+**CONFIRMED PASSIVELY on 2026-08-23:** a MIF peer is not necessarily an AirDrop
+receiver. The previous fresh-session target advertised three `_asquic` records
+and no AirDrop owner, whereas the known Mac advertised nine embedded records
+including compressed `_airdrop._tcp.local`. The new bounded decoder classified
+the Mac as AirDrop TCP with three PTR, three SRV, three TXT, and zero malformed
+records. The normal firmware remained receive-only throughout.
+
+The MIF audit also rules out indiscriminate Apple capability mirroring. The
+iPhone from the earlier successful IPv6 exchange advertised additional data
+path, HT/VHT-container, version, and unknown capability state, but it admitted
+espDrop while espDrop transmitted the same minimal nine-TLV MIF used later.
+Some captured fields describe hardware features the ESP32-S3 does not possess.
+They remain research observations rather than bytes to impersonate.
+
+AWDL-embedded AirDrop service evidence is now carried into the peer table, and
+the table can return exactly one fresh receiver or reject the selection as
+not-found/ambiguous. Evidence is in
+[`lab/2026-08-23-awdl-service-identification.json`](lab/2026-08-23-awdl-service-identification.json).
+
 ## Timing model
 
 **CONFIRMED by the OWL research:** AWDL divides time into availability windows
