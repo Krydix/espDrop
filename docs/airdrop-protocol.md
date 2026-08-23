@@ -67,9 +67,18 @@ complete chunked binary-plist response. The response contained the receiver
 computer-name, IDS-session, pseudonym, and push-token keys. The negative
 control—appending `/Ask` after `/Discover` on one connection—timed out without
 a prompt. This matches OpenDrop's separation between its earlier find flow and
-the new client connection used by send. No `/Upload` was armed. Compact
-evidence is in
+the new client connection used by send. Compact Ask-only evidence is in
 [`lab/2026-08-24-airdrop-ask.json`](lab/2026-08-24-airdrop-ask.json).
+
+**CONFIRMED on the espDrop S3 test target:** after a later attended `/Ask`
+returned `HTTP 200`, espDrop reused the accepted TLS connection and exact
+TransferID for one `/Upload`. The body was a 445-byte valid JPEG in a 10 KiB
+ODC cpio archive, zlib-compressed into one dvzip block and sent with chunked
+framing plus the observed Apple header order. The receiver returned `HTTP 200`
+with an empty body, and the user confirmed that `hello.jpg` arrived on the
+stock iPhone. Exactly one upload was attempted and no retry was enabled.
+Compact evidence is in
+[`lab/2026-08-24-airdrop-upload.json`](lab/2026-08-24-airdrop-upload.json).
 
 ## Identity and discoverability
 
@@ -120,9 +129,10 @@ Only a unique, fresh, complete endpoint can be selected automatically.
 ## Implementation rule
 
 No AirDrop endpoint is considered implemented until its exact request headers,
-body framing, plist keys, response, TLS behavior, and payload hash are captured
-against the test iPhone. A `200` from `/Ask` is not evidence that
-`/Upload` will be accepted.
+body framing, plist keys, response, TLS behavior, and payload are captured
+against the test iPhone. A `200` from `/Ask` alone is not evidence that
+`/Upload` will be accepted; the retained upload run now proves both for the
+bounded JPEG fixture.
 
 ## Primary references
 

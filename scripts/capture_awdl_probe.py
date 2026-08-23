@@ -288,6 +288,22 @@ AIRDROP_ASK = re.compile(
     re.IGNORECASE,
 )
 
+AIRDROP_UPLOAD = re.compile(
+    r"AWDL-AIRDROP-UPLOAD instance=(?P<instance>[^ ]+) "
+    r"attempted=(?P<attempted>\d+) result=(?P<result>[^ ]+) "
+    r"error=(?P<error>-?\d+) status=(?P<status>\d+) "
+    r"request_bytes=(?P<request_bytes>\d+) "
+    r"payload_bytes=(?P<payload_bytes>\d+) "
+    r"archive_bytes=(?P<archive_bytes>\d+) "
+    r"compressed_bytes=(?P<compressed_bytes>\d+) "
+    r"file_bytes=(?P<file_bytes>\d+) "
+    r"response_bytes=(?P<response_bytes>\d+) "
+    r"body_bytes=(?P<body_bytes>\d+) "
+    r"transfer_id=(?P<transfer_id>[^ ]+) "
+    r"continuity=(?P<continuity>\d+) retry=(?P<retry>[^ ]+)",
+    re.IGNORECASE,
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -342,6 +358,7 @@ def main() -> None:
     airdrop_tls = []
     airdrop_discover = []
     airdrop_ask = []
+    airdrop_upload = []
     boot_lines = []
     with open_without_reset(args.port, timeout=0.25) as connection:
         if args.reset:
@@ -618,6 +635,17 @@ def main() -> None:
                 ):
                     ask[key] = int(ask[key])
                 airdrop_ask.append(ask)
+            upload_match = AIRDROP_UPLOAD.search(line)
+            if upload_match:
+                upload = upload_match.groupdict()
+                for key in (
+                    "attempted", "error", "status", "request_bytes",
+                    "payload_bytes", "archive_bytes", "compressed_bytes",
+                    "file_bytes", "response_bytes", "body_bytes",
+                    "continuity",
+                ):
+                    upload[key] = int(upload[key])
+                airdrop_upload.append(upload)
 
     unique_sources = sorted({item["source"] for item in frames})
     raw_captures = []
@@ -690,6 +718,7 @@ def main() -> None:
             "airdropTls": airdrop_tls,
             "airdropDiscover": airdrop_discover,
             "airdropAsk": airdrop_ask,
+            "airdropUpload": airdrop_upload,
         },
         "bootLogPrefix": boot_lines,
     }

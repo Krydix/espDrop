@@ -24,8 +24,8 @@ cloud service.
 > TLS 1.2 transport using a lab-only self-signed client certificate. It then
 > sent a bounded binary-plist `POST /Ask` on a fresh sender connection. The
 > stock iPhone displayed its native AirDrop prompt; after explicit acceptance,
-> it returned HTTP 200 with a chunked binary-plist response. `/Upload` remains
-> disabled, so no file bytes have been transferred yet. See
+> espDrop reused that connection and TransferID for a chunked dvzip
+> `POST /Upload`. The iPhone returned HTTP 200 and received `hello.jpg`. See
 > [the unknowns ledger](docs/unknowns.md) for evidence-backed status.
 
 ## What exists now
@@ -44,8 +44,9 @@ cloud service.
   200, plus bounded Content-Length/chunked response parsing
 - a hardware-proven one-file `/Ask` request that triggered the stock iPhone's
   native prompt and received HTTP 200 after explicit acceptance
-- host-tested `/Upload` identity, exact iOS 26 header, HTTP chunk, and dvzip
-  block framing builders; no upload is armed in firmware
+- a hardware-proven attended `/Upload`: ODC cpio, zlib-compressed dvzip,
+  Apple-order headers, same accepted TransferID and TLS connection, HTTP 200,
+  and a JPEG received by the stock iPhone; disabled in normal firmware
 - verbatim preservation of a peer's modern 16-slot AWDL channel sequence
 - bounded ephemeral BLE/AWDL/AirDrop peer model
 - TapDrop scoring based on timing, appearance, cross-layer observation, and

@@ -372,13 +372,20 @@ static void probe_airdrop_tcp_service(
 #if CONFIG_ESPDROP_AIRDROP_ASK_LAB
         espdrop_airdrop_ask_result_t ask;
         memset(&discover, 0, sizeof(discover));
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+        espdrop_airdrop_upload_result_t upload;
+#endif
 #endif
         /* A TLS flight can span several AWDL availability windows. The
          * receiver's first handshake response has been observed near the
          * former six-second bound, so leave enough time for our certificate
          * flight and the receiver's Finished message. */
         const bool tls_connected =
-#if CONFIG_ESPDROP_AIRDROP_ASK_LAB
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+            espdrop_airdrop_tls_ask_upload_probe(
+                socket_fd, service->target, service->port, 12000U, 30000U,
+                30000U, &tls, &ask, &upload);
+#elif CONFIG_ESPDROP_AIRDROP_ASK_LAB
             espdrop_airdrop_tls_ask_probe(
                 socket_fd, service->target, service->port, 12000U, 30000U,
                 &tls, &ask);
@@ -441,12 +448,17 @@ static void probe_airdrop_tcp_service(
         if (ask_accepted) {
             ++stats.airdrop_ask_accepted;
         }
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+        static const char ask_upload_policy[] = "enabled-on-accept";
+#else
+        static const char ask_upload_policy[] = "disabled";
+#endif
         ESP_LOGW(TAG,
                  "AWDL-AIRDROP-ASK instance=%s attempted=%u result=%s "
                  "error=%d status=%u request_bytes=%u response_bytes=%u "
                  "body_bytes=%u bplist=%u receiver_name=%u ids_session=%u "
                  "receiver_pseudonym=%u receiver_push_token=%u chunked=%u "
-                 "transfer_id=%s upload=disabled",
+                 "transfer_id=%s upload=%s",
                  service->instance, ask.attempted ? 1U : 0U,
                  ask_accepted ? "accepted" :
                      (ask.response_complete ? "rejected" : "failed"),
@@ -457,7 +469,39 @@ static void probe_airdrop_tcp_service(
                  ask.ids_session_id_key ? 1U : 0U,
                  ask.receiver_pseudonym_key ? 1U : 0U,
                  ask.receiver_push_token_key ? 1U : 0U,
-                 ask.chunked ? 1U : 0U, ask.transfer_id);
+                 ask.chunked ? 1U : 0U, ask.transfer_id,
+                 ask_upload_policy);
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+        if (upload.attempted) {
+            ++stats.airdrop_upload_attempts;
+        }
+        if (upload.response_complete) {
+            ++stats.airdrop_upload_responses;
+        }
+        const bool upload_accepted =
+            upload.response_complete && upload.http_status == 200U;
+        if (upload_accepted) {
+            ++stats.airdrop_upload_accepted;
+        }
+        ESP_LOGW(TAG,
+                 "AWDL-AIRDROP-UPLOAD instance=%s attempted=%u result=%s "
+                 "error=%d status=%u request_bytes=%u payload_bytes=%u "
+                 "archive_bytes=%u compressed_bytes=%u file_bytes=%u "
+                 "response_bytes=%u body_bytes=%u transfer_id=%s "
+                 "continuity=%u retry=disabled",
+                 service->instance, upload.attempted ? 1U : 0U,
+                 upload_accepted ? "accepted" :
+                     (upload.response_complete ? "rejected" : "failed"),
+                 upload.error, upload.http_status,
+                 (unsigned)upload.request_bytes,
+                 (unsigned)upload.payload_bytes,
+                 (unsigned)upload.archive_bytes,
+                 (unsigned)upload.compressed_bytes,
+                 (unsigned)upload.file_bytes,
+                 (unsigned)upload.response_bytes,
+                 (unsigned)upload.body_bytes, upload.transfer_id,
+                 upload.transfer_id_continuity ? 1U : 0U);
+#endif
 #endif
     }
 #endif

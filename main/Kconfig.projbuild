@@ -71,6 +71,17 @@ config ESPDROP_AIRDROP_ASK_LAB
         prompt on the receiver. It never sends /Upload. Enable only for an
         attended lab run with explicit user consent.
 
+config ESPDROP_AIRDROP_UPLOAD_LAB
+    bool "Send one bounded hello.jpg after accepted /Ask"
+    depends on ESPDROP_AIRDROP_ASK_LAB
+    default n
+    help
+        After the user accepts the attended /Ask, send one deterministic JPEG
+        in a zlib-compressed ODC cpio archive using the observed chunked dvzip
+        framing and Apple-order headers. The accepted TLS connection and exact
+        TransferID are reused. There is no retry. Normal and web-flasher builds
+        must leave this disabled.
+
 config ESPDROP_AWDL_LAB_TARGET_MAC
     string "AWDL lab endpoint MAC (empty permits auto-selection)"
     depends on ESPDROP_AWDL_TX_LAB

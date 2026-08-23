@@ -12,6 +12,8 @@ extern "C" {
 #define ESPDROP_AIRDROP_SENDER_PSEUDONYM_BYTES 29U
 #define ESPDROP_AIRDROP_SENDER_PUSH_TOKEN_BYTES 65U
 #define ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES 4U
+#define ESPDROP_AIRDROP_ODC_HEADER_BYTES 76U
+#define ESPDROP_AIRDROP_ODC_BLOCK_BYTES 10240U
 
 typedef struct {
     char transfer_id[ESPDROP_AIRDROP_TRANSFER_ID_BYTES];
@@ -26,6 +28,29 @@ bool espdrop_airdrop_transfer_id_valid(const char *value);
  * identity. */
 bool espdrop_airdrop_upload_identity_valid(
     const espdrop_airdrop_upload_identity_t *identity);
+
+/* Format anonymous Everyone-mode sender fields with the shapes captured from
+ * iOS 26: URL-safe unpadded base64 over 16 random bytes, and upper-case hex
+ * over 32 random bytes. These are ephemeral syntax, not Apple identities. */
+void espdrop_airdrop_format_sender_pseudonym(
+    char output[ESPDROP_AIRDROP_SENDER_PSEUDONYM_BYTES],
+    const uint8_t random_bytes[16]);
+void espdrop_airdrop_format_sender_push_token(
+    char output[ESPDROP_AIRDROP_SENDER_PUSH_TOKEN_BYTES],
+    const uint8_t random_bytes[32]);
+
+/* Build one deterministic old-ASCII (odc) cpio archive and pad it to
+ * libarchive's 10 KiB output block. The archive path is a single normalized
+ * "./name" entry and the source bytes can come from flash, PSRAM, or storage.
+ * This bounded helper is the first lab payload; the production path will
+ * replace the contiguous source with a storage stream. */
+size_t espdrop_airdrop_build_odc_archive(
+    uint8_t *output,
+    size_t capacity,
+    const char *archive_path,
+    const uint8_t *file_data,
+    size_t file_bytes,
+    uint32_t mtime);
 
 /* Build the exact minimal /Upload head observed in the successful iOS 26
  * interoperability run. Deliberately emits neither Host nor Accept-Encoding.

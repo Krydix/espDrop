@@ -389,3 +389,13 @@ espdrop_airdrop_http_parse_t espdrop_airdrop_parse_ask_response(
     return espdrop_airdrop_parse_discover_response(
         response, length, end_of_stream, result);
 }
+
+espdrop_airdrop_http_parse_t espdrop_airdrop_parse_upload_response(
+    const uint8_t *response,
+    size_t length,
+    bool end_of_stream,
+    espdrop_airdrop_http_result_t *result)
+{
+    return espdrop_airdrop_parse_discover_response(
+        response, length, end_of_stream, result);
+}

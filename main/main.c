@@ -166,7 +166,9 @@ void app_main(void)
         ESP_ERROR_CHECK(espdrop_awdl_probe_start(CONFIG_ESPDROP_AWDL_PROBE_CHANNEL));
     }
     ESP_ERROR_CHECK(ota_update_confirm_running());
-#if CONFIG_ESPDROP_AIRDROP_ASK_LAB
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+    ESP_LOGW(TAG, "attended AirDrop /Ask+/Upload lab armed; retry is disabled");
+#elif CONFIG_ESPDROP_AIRDROP_ASK_LAB
     ESP_LOGW(TAG, "attended AirDrop /Ask lab armed; /Upload is disabled");
 #else
     ESP_LOGW(TAG, "protocol transport is research-stage; no AirDrop transfer is armed");

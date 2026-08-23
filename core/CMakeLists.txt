@@ -17,7 +17,7 @@ idf_component_register(
         "src/awdl_probe.c"
         "src/peer_table.c"
     INCLUDE_DIRS "include"
-    REQUIRES esp_timer esp_wifi esp_netif esp_event lwip mbedtls
+    REQUIRES esp_timer esp_wifi esp_netif esp_event esp_rom lwip mbedtls
 )
 
 if(CONFIG_ESPDROP_AIRDROP_TLS_LAB)

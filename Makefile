@@ -152,10 +152,14 @@ test:
 	@"$(BUILD_DIR)/host-tests/test_airdrop_http"
 	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
 		-I"$(ROOT_DIR)/core/include" \
+		-I"$(ROOT_DIR)/core/src" \
 		"$(ROOT_DIR)/core/src/airdrop_upload.c" \
 		"$(ROOT_DIR)/tests/test_airdrop_upload.c" \
 		-o "$(BUILD_DIR)/host-tests/test_airdrop_upload"
-	@"$(BUILD_DIR)/host-tests/test_airdrop_upload"
+	@"$(BUILD_DIR)/host-tests/test_airdrop_upload" \
+		"$(BUILD_DIR)/host-tests/upload.cpio"
+	@python3 "$(ROOT_DIR)/tests/test_airdrop_upload_archive.py" \
+		"$(BUILD_DIR)/host-tests/upload.cpio"
 	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
 		-I"$(ROOT_DIR)/core/include" \
 		"$(ROOT_DIR)/core/src/airdrop_mdns.c" \

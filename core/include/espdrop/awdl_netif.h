@@ -44,6 +44,9 @@ typedef struct {
     uint32_t airdrop_ask_attempts;
     uint32_t airdrop_ask_responses;
     uint32_t airdrop_ask_accepted;
+    uint32_t airdrop_upload_attempts;
+    uint32_t airdrop_upload_responses;
+    uint32_t airdrop_upload_accepted;
     uint32_t tcp_tx_segments;
     uint32_t tcp_tx_syn;
     uint32_t tcp_tx_radio_success;

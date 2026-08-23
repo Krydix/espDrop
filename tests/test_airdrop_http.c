@@ -75,6 +75,15 @@ int main(void)
     assert(parsed.receiver_pseudonym_key);
     assert(parsed.receiver_push_token_key);
 
+    static const char upload_response[] =
+        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+    assert(espdrop_airdrop_parse_upload_response(
+               (const uint8_t *)upload_response,
+               sizeof(upload_response) - 1U, false,
+               &parsed) == ESPDROP_AIRDROP_HTTP_COMPLETE);
+    assert(parsed.status_code == 200U);
+    assert(parsed.body_bytes == 0U);
+
     static const char invalid[] = "NOPE\r\nContent-Length: 0\r\n\r\n";
     assert(espdrop_airdrop_parse_discover_response(
                (const uint8_t *)invalid, sizeof(invalid) - 1U, true,

@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-24",
+  "scope": "attended one-file Everyone-mode AirDrop /Ask and /Upload from ESP32-S3 to a stock iPhone",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "firmwareBaseHead": "bec024c",
+    "normalBuildTransmitEnabled": false
+  },
+  "receiver": {
+    "osBuild": "not captured",
+    "discoverability": "Everyone mode, user configured",
+    "peerMac": "52:f4:36:b8:fd:f5",
+    "instance": "5dfdb874b0ae._airdrop._tcp.local",
+    "host": "4397a2ae-d160-4a12-abc2-ee9fdadae21f.local",
+    "ipv6": "fe80::50f4:36ff:feb8:fdf5",
+    "port": 8770
+  },
+  "consent": {
+    "nativePromptObservedByUser": true,
+    "explicitlyAcceptedByUser": true,
+    "fileArrivalConfirmedByUser": true
+  },
+  "ask": {
+    "firstRequestOnSenderConnection": true,
+    "fileName": "hello.jpg",
+    "fileType": "public.jpeg",
+    "requestBytes": 712,
+    "responseBytes": 442,
+    "responseBodyBytes": 359,
+    "httpStatus": 200,
+    "binaryPlist": true,
+    "transferID": "1BE2D7FB-3F6E-4ED3-AF50-0D778B3A674A"
+  },
+  "upload": {
+    "sameTlsConnection": true,
+    "transferID": "1BE2D7FB-3F6E-4ED3-AF50-0D778B3A674A",
+    "transferIDContinuity": true,
+    "contentType": "application/x-dvzip",
+    "transferEncoding": "chunked",
+    "fileBytes": 445,
+    "archiveFormat": "ODC cpio",
+    "archiveBytes": 10240,
+    "compression": "zlib",
+    "compressedBytes": 469,
+    "dvzipPayloadBytes": 473,
+    "requestBytesIncludingChunkFraming": 819,
+    "responseBytes": 62,
+    "responseBodyBytes": 0,
+    "httpStatus": 200,
+    "attempts": 1,
+    "retryEnabled": false
+  },
+  "radioSummary": {
+    "actionAttempts": 86,
+    "actionRadioSuccess": 86,
+    "dataRadioSuccess": 37,
+    "dataRadioFailed": 0,
+    "tcpConnected": true,
+    "tlsConnected": true,
+    "askAccepted": true,
+    "uploadAccepted": true
+  },
+  "result": {
+    "confirmed": "A stock iPhone accepted espDrop's attended /Ask, accepted a same-connection chunked dvzip /Upload with the identical TransferID, returned HTTP 200, and received the valid embedded hello.jpg.",
+    "notConfirmed": "The fixture was embedded in the lab image rather than streamed from microSD. Other file sizes, file types, iOS versions, Contacts Only, receive direction, BLE wake, NFC correlation, and retry behavior remain unproven.",
+    "nextFocus": "Replace the contiguous lab fixture with a bounded streaming sender abstraction, then send /sd/outbox/hello.jpg without changing the proven wire profile."
+  }
+}

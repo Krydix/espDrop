@@ -57,6 +57,12 @@ espdrop_airdrop_http_parse_t espdrop_airdrop_parse_ask_response(
     bool end_of_stream,
     espdrop_airdrop_http_result_t *result);
 
+espdrop_airdrop_http_parse_t espdrop_airdrop_parse_upload_response(
+    const uint8_t *response,
+    size_t length,
+    bool end_of_stream,
+    espdrop_airdrop_http_result_t *result);
+
 #ifdef __cplusplus
 }
 #endif

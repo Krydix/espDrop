@@ -173,17 +173,20 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
   Contacts Only identity validation and the full set of accepted modern TLS
   profiles remain separate unknowns.
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
-  ESP-to-iPhone `/Discover` and `/Ask` are now captured and accepted; `/Upload`
-  and the opposite direction remain open. The successful attended `/Ask` is in
-  [`lab/2026-08-24-airdrop-ask.json`](lab/2026-08-24-airdrop-ask.json).
-- [ ] Confirm TransferID and connection-reuse requirements.
-  The Ask-to-Upload continuity requirement is reference-derived and pinned by
-  host tests. The live Ask proves iOS accepts the announced UUID but Upload has
-  not yet exercised continuity. OpenDrop source inspection and the first failed
-  lab arm also confirm `/Ask` must begin the sender connection rather than be
-  appended to the discovery connection.
+  ESP-to-iPhone `/Discover`, `/Ask`, and `/Upload` are now captured and
+  accepted; the opposite direction remains open. The successful attended send
+  is in
+  [`lab/2026-08-24-airdrop-upload.json`](lab/2026-08-24-airdrop-upload.json).
+- [x] Confirm TransferID continuity and connection reuse for the working
+  sender profile. One attended run reused the accepted TLS connection and the
+  exact uppercase UUID from `/Ask`; `/Upload` returned 200 and the file landed.
+  This confirms one working profile, not that alternate profiles must fail.
 - [ ] Confirm cpio versus dvzip by file type.
+  One zlib-compressed dvzip block containing an ODC cpio JPEG archive is now
+  hardware-proven. Bare cpio and other file types remain untested.
 - [ ] Prove bounded streaming receive to microSD.
+- [x] Prove one embedded JPEG send to a stock iPhone. The 445-byte lab fixture
+  arrived as `hello.jpg` after explicit acceptance, with no retry.
 - [ ] Prove one JPEG send from microSD.
 
 ## M4/M5 — TapDrop

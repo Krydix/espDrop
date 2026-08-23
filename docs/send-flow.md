@@ -59,25 +59,29 @@ its first HTTP request as OpenDrop does. Its bounded one-file binary plist
 carried `hello.jpg`, `public.jpeg`, a UUID TransferID, and a files transfer
 type. The stock iPhone displayed its native AirDrop prompt and, after explicit
 acceptance, returned `HTTP 200` with a 359-byte chunked binary plist containing
-the receiver-name, IDS-session, pseudonym, and push-token keys. Evidence is in
-[`lab/2026-08-24-airdrop-ask.json`](lab/2026-08-24-airdrop-ask.json). The next
-live boundary is a bounded `/Upload`, not more `/Ask` experimentation.
+the receiver-name, IDS-session, pseudonym, and push-token keys. The subsequent
+attended run reused that connection and exact TransferID for one Apple-shaped,
+chunked dvzip `/Upload`. The iPhone returned `HTTP 200`, and the user confirmed
+that `hello.jpg` arrived. Evidence is in
+[`lab/2026-08-24-airdrop-upload.json`](lab/2026-08-24-airdrop-upload.json).
 
-**REFERENCE (iOS 26 capture):** matching the TransferID between `/Ask` and
-`/Upload` was necessary for upload acceptance. The observed Apple-like upload
-used chunked dvzip on a reused connection.
+**CONFIRMED FOR THE TEST IPHONE:** the successful upload matched the TransferID
+between `/Ask` and `/Upload`, used chunked dvzip, and reused the accepted TLS
+connection. This reproduces the iOS 26 reference profile; it does not yet prove
+which of those properties other receiver versions require.
 
-**IMPLEMENTED AS A HOST/BUILD FIXTURE, NOT ARMED:** the core validates the
+**IMPLEMENTED AND HARDWARE-PROVEN BEHIND AN ATTENDED LAB FLAG:** the core validates the
 observed upper-case UUID, URL-safe pseudonym, and upper-case push-token shapes;
 builds the exact minimal `/Upload` header order without `Host` or
-`Accept-Encoding`; and builds bounded HTTP chunk and dvzip block headers. Unit
-tests pin the successful iOS 26 capture shape and the 128 KiB stored-block
-boundary. The remaining live prerequisites are ODC cpio streaming and a
-transfer-scoped state machine that guarantees the accepted `TransferID` is
-reused by `/Upload` on the accepted connection.
+`Accept-Encoding`; builds a bounded ODC cpio archive and HTTP chunk/dvzip
+framing; compresses it with the ESP32-S3 ROM miniz implementation; and uploads
+only after `/Ask` returns 200. Unit tests independently parse the archive and
+round-trip its zlib/dvzip payload. The first live fixture is deliberately tiny
+and contiguous; microSD streaming and the public sender state machine remain.
 
-**UNKNOWN:** whether the target iPhone requires dvzip for JPEG received from a
-non-Apple sender, accepts cpio, or negotiates this via metadata/flags.
+**CONFIRMED:** the target iPhone accepts dvzip for a JPEG received from this
+non-Apple sender. Whether it also accepts bare cpio, and which containers other
+file types or receiver versions require, remains unknown.
 
 **UNKNOWN:** which alternate TLS/certificate profiles current Everyone mode
 accepts, and the Contacts Only identity requirements. One minimum working

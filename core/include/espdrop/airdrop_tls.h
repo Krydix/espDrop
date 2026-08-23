@@ -53,6 +53,22 @@ typedef struct {
     char transfer_id[37];
 } espdrop_airdrop_ask_result_t;
 
+typedef struct {
+    bool attempted;
+    bool response_complete;
+    bool transfer_id_continuity;
+    int error;
+    unsigned http_status;
+    size_t request_bytes;
+    size_t payload_bytes;
+    size_t archive_bytes;
+    size_t compressed_bytes;
+    size_t file_bytes;
+    size_t response_bytes;
+    size_t body_bytes;
+    char transfer_id[37];
+} espdrop_airdrop_upload_result_t;
+
 /* Perform one bounded TLS client handshake on an already-connected socket.
  * The lab profile mirrors OpenDrop's Everyone-mode behavior: present a
  * self-signed client certificate and accept the receiver's self-signed
@@ -86,6 +102,20 @@ bool espdrop_airdrop_tls_ask_probe(
     uint32_t ask_timeout_ms,
     espdrop_airdrop_tls_result_t *tls_result,
     espdrop_airdrop_ask_result_t *ask_result);
+
+/* Attended lab only: issue one /Ask and, only after HTTP 200 consent, send one
+ * bounded hello.jpg /Upload on the same TLS connection with the exact accepted
+ * TransferID. No retry or second transfer is attempted. */
+bool espdrop_airdrop_tls_ask_upload_probe(
+    int socket_fd,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t handshake_timeout_ms,
+    uint32_t ask_timeout_ms,
+    uint32_t upload_timeout_ms,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_ask_result_t *ask_result,
+    espdrop_airdrop_upload_result_t *upload_result);
 
 #ifdef __cplusplus
 }
