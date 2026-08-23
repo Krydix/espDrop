@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "startedAt": "2026-08-23T02:20:00+00:00",
+  "localDate": "2026-08-23",
+  "durationSeconds": 28,
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "ipv6LinkLocal": "fe80::1edb:d4ff:fe42:3fa0",
+    "channel": 6,
+    "profile": "CONFIG_ESPDROP_AWDL_TX_LAB=y",
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "applePeer": {
+    "kind": "Mac awdl0 elected master",
+    "mac": "ea:33:2c:82:f5:7f",
+    "ipv6LinkLocal": "fe80::e833:2cff:fe82:f57f"
+  },
+  "transmit": {
+    "scheduledChannel6Windows": 14,
+    "measuredLatenessMicroseconds": {
+      "minimum": 1,
+      "maximum": 2
+    },
+    "actionFrames": {
+      "attempted": 14,
+      "radioSuccess": 14,
+      "radioFailed": 0
+    },
+    "neighborSolicitations": {
+      "attempted": 14,
+      "radioSuccess": 14,
+      "radioFailed": 0
+    },
+    "echoRequests": {
+      "attempted": 14,
+      "radioSuccess": 14,
+      "radioFailed": 0
+    },
+    "snapOui": "00:17:f2",
+    "actionClock": "mapped from the latest elected-master phy_tx observation"
+  },
+  "espReceiveObservation": {
+    "rawDataFrames": 27,
+    "framesFromSelf": 0,
+    "framesToSelf": 0,
+    "framesWithAwdlBssid": 0,
+    "sampledCandidates": 0,
+    "decodedAwdlDataFrames": 0,
+    "decodedIpv6Frames": 0,
+    "neighborAdvertisements": 0,
+    "echoReplies": 0
+  },
+  "result": {
+    "confirmed": "All action, Neighbor Solicitation, and Echo frames radio-completed in advertised channel-6 windows with 1-2 us measured scheduling lateness. The AWDL data SNAP OUI is 00:17:f2 and action timestamps use the observed peer clock domain.",
+    "notConfirmed": "The Mac emitted no data frame addressed to the ESP or using the AWDL BSSID. Bidirectional IPv6 and M1 gate 6 remain incomplete.",
+    "nextFocus": "Determine which current peer-admission TLVs or state transitions macOS requires beyond the legacy OWL-compatible MIF subset."
+  }
+}

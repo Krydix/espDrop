@@ -16,7 +16,7 @@ static const uint8_t awdl_bssid[6] = {
     0x00, 0x25, 0x00, 0xff, 0x94, 0x73,
 };
 static const uint8_t llc_header[LLC_HEADER_BYTES] = {
-    0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00, 0x08, 0x00,
+    0xaa, 0xaa, 0x03, 0x00, 0x17, 0xf2, 0x08, 0x00,
 };
 
 static uint16_t read_be16(const uint8_t *value)
@@ -214,41 +214,52 @@ bool espdrop_awdl_build_echo_request(
     return true;
 }
 
-static bool decode_msdu(
+static espdrop_awdl_data_decode_result_t decode_msdu(
     const uint8_t *msdu,
     size_t length,
     espdrop_awdl_data_t *data)
 {
-    if (length < LLC_HEADER_BYTES + AWDL_DATA_HEADER_BYTES ||
-        memcmp(msdu, llc_header, sizeof(llc_header)) != 0) {
-        return false;
+    if (length < LLC_HEADER_BYTES + AWDL_DATA_HEADER_BYTES) {
+        return ESPDROP_AWDL_DATA_DECODE_TOO_SHORT;
+    }
+    if (memcmp(msdu, llc_header, sizeof(llc_header)) != 0) {
+        return ESPDROP_AWDL_DATA_DECODE_LLC;
     }
     const uint8_t *awdl = msdu + LLC_HEADER_BYTES;
     if (awdl[0] != 0x03U || awdl[1] != 0x04U ||
         awdl[4] != 0U || awdl[5] != 0U) {
-        return false;
+        return ESPDROP_AWDL_DATA_DECODE_HEADER;
     }
     data->sequence = read_le16(awdl + 2);
     data->ethertype = read_be16(awdl + 6);
     data->payload = awdl + AWDL_DATA_HEADER_BYTES;
     data->payload_length = length - LLC_HEADER_BYTES - AWDL_DATA_HEADER_BYTES;
-    return true;
+    return ESPDROP_AWDL_DATA_DECODE_OK;
 }
 
-bool espdrop_awdl_decode_data(
+espdrop_awdl_data_decode_result_t espdrop_awdl_decode_data_ex(
     const uint8_t *frame,
     size_t length,
     espdrop_awdl_data_t *data)
 {
-    if (frame == NULL || data == NULL || length < IEEE80211_HEADER_BYTES ||
-        (frame[0] & 0x0cU) != 0x08U ||
-        (frame[1] & 0x03U) != 0U ||
-        memcmp(frame + 16, awdl_bssid, sizeof(awdl_bssid)) != 0) {
-        return false;
+    if (frame == NULL || data == NULL) {
+        return ESPDROP_AWDL_DATA_DECODE_INVALID_ARGUMENT;
+    }
+    if (length < IEEE80211_HEADER_BYTES) {
+        return ESPDROP_AWDL_DATA_DECODE_TOO_SHORT;
+    }
+    if ((frame[0] & 0x0cU) != 0x08U) {
+        return ESPDROP_AWDL_DATA_DECODE_NOT_DATA;
+    }
+    if ((frame[1] & 0x03U) != 0U) {
+        return ESPDROP_AWDL_DATA_DECODE_DISTRIBUTION_SYSTEM;
+    }
+    if (memcmp(frame + 16, awdl_bssid, sizeof(awdl_bssid)) != 0) {
+        return ESPDROP_AWDL_DATA_DECODE_BSSID;
     }
     const uint8_t subtype = frame[0] & 0xf0U;
     if (subtype != 0x00U && subtype != 0x80U) {
-        return false;
+        return ESPDROP_AWDL_DATA_DECODE_SUBTYPE;
     }
 
     memset(data, 0, sizeof(*data));
@@ -256,7 +267,7 @@ bool espdrop_awdl_decode_data(
     size_t offset = IEEE80211_HEADER_BYTES;
     if (data->qos) {
         if (length < offset + IEEE80211_QOS_BYTES) {
-            return false;
+            return ESPDROP_AWDL_DATA_DECODE_QOS_TOO_SHORT;
         }
         data->amsdu = (frame[offset] & 0x80U) != 0U;
         offset += IEEE80211_QOS_BYTES;
@@ -264,12 +275,12 @@ bool espdrop_awdl_decode_data(
 
     if (data->amsdu) {
         if (length < offset + AMSDU_SUBFRAME_HEADER_BYTES) {
-            return false;
+            return ESPDROP_AWDL_DATA_DECODE_AMSDU_TOO_SHORT;
         }
         const uint16_t msdu_length = read_be16(frame + offset + 12);
         if ((size_t)msdu_length >
             length - offset - AMSDU_SUBFRAME_HEADER_BYTES) {
-            return false;
+            return ESPDROP_AWDL_DATA_DECODE_AMSDU_LENGTH;
         }
         memcpy(data->destination, frame + offset, 6U);
         memcpy(data->source, frame + offset + 6, 6U);
@@ -280,6 +291,15 @@ bool espdrop_awdl_decode_data(
     memcpy(data->destination, frame + 4, 6U);
     memcpy(data->source, frame + 10, 6U);
     return decode_msdu(frame + offset, length - offset, data);
+}
+
+bool espdrop_awdl_decode_data(
+    const uint8_t *frame,
+    size_t length,
+    espdrop_awdl_data_t *data)
+{
+    return espdrop_awdl_decode_data_ex(frame, length, data) ==
+           ESPDROP_AWDL_DATA_DECODE_OK;
 }
 
 bool espdrop_awdl_decode_ipv6(

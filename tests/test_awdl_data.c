@@ -53,7 +53,8 @@ int main(void)
     assert(memcmp(frame + 4, target, 6U) == 0);
     assert(memcmp(frame + 10, self, 6U) == 0);
     assert(frame[22] == 0x30U && frame[23] == 0x12U);
-    assert(memcmp(frame + 24, "\xaa\xaa\x03\0\0\0\x08\0", 8U) == 0);
+    assert(memcmp(frame + 24,
+                  "\xaa\xaa\x03\x00\x17\xf2\x08\x00", 8U) == 0);
     assert(frame[32] == 0x03U && frame[33] == 0x04U);
     assert(frame[34] == 0x67U && frame[35] == 0x45U);
     assert(frame[38] == 0x86U && frame[39] == 0xddU);
@@ -64,6 +65,8 @@ int main(void)
     assert(data.sequence == 0x4567U);
     assert(data.ethertype == 0x86ddU);
     assert(data.payload_length == 72U);
+    assert(espdrop_awdl_decode_data_ex(frame, length, &data) ==
+           ESPDROP_AWDL_DATA_DECODE_OK);
 
     espdrop_awdl_ipv6_t ipv6;
     assert(espdrop_awdl_decode_ipv6(&data, &ipv6));
@@ -88,6 +91,39 @@ int main(void)
         frame, sizeof(frame) - 1U, &length, self, target, 0, 0));
     frame[16] ^= 1U;
     assert(!espdrop_awdl_decode_data(frame, sizeof(frame), &data));
+    assert(espdrop_awdl_decode_data_ex(frame, sizeof(frame), &data) ==
+           ESPDROP_AWDL_DATA_DECODE_BSSID);
+    frame[16] ^= 1U;
+
+    uint8_t qos_frame[128] = {0};
+    memcpy(qos_frame, frame, 24U);
+    qos_frame[0] = 0x88U;
+    memcpy(qos_frame + 26U, frame + 24U, length - 24U);
+    assert(espdrop_awdl_decode_data(qos_frame, length + 2U, &data));
+    assert(data.qos && !data.amsdu);
+    assert(data.sequence == 0x4567U);
+
+    uint8_t amsdu_frame[160] = {0};
+    memcpy(amsdu_frame, frame, 24U);
+    amsdu_frame[0] = 0x88U;
+    amsdu_frame[24] = 0x80U;
+    memcpy(amsdu_frame + 26U, target, 6U);
+    memcpy(amsdu_frame + 32U, self, 6U);
+    const size_t msdu_length = length - 24U;
+    amsdu_frame[38] = (uint8_t)(msdu_length >> 8U);
+    amsdu_frame[39] = (uint8_t)msdu_length;
+    memcpy(amsdu_frame + 40U, frame + 24U, msdu_length);
+    const size_t amsdu_length = 40U + msdu_length;
+    assert(espdrop_awdl_decode_data(amsdu_frame, amsdu_length, &data));
+    assert(data.qos && data.amsdu);
+    assert(memcmp(data.destination, target, 6U) == 0);
+    assert(memcmp(data.source, self, 6U) == 0);
+    assert(data.sequence == 0x4567U);
+    amsdu_frame[38] = 0xffU;
+    amsdu_frame[39] = 0xffU;
+    assert(espdrop_awdl_decode_data_ex(
+               amsdu_frame, amsdu_length, &data) ==
+           ESPDROP_AWDL_DATA_DECODE_AMSDU_LENGTH);
 
     uint8_t echo[ESPDROP_AWDL_ECHO_FRAME_BYTES];
     assert(espdrop_awdl_build_echo_request(

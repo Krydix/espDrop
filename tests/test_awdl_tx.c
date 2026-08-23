@@ -16,6 +16,7 @@ int main(void)
     espdrop_awdl_mif_t observed = {
         .has_sync = true,
         .has_election_v2 = true,
+        .has_channel_sequence = true,
         .sync = {
             .tx_down_counter = 35,
             .master_channel = 6,
@@ -31,21 +32,44 @@ int main(void)
             .self_metric = 510,
             .self_counter = 741,
         },
+        .channel_sequence = {
+            .count = 16,
+        },
     };
+    for (size_t index = 0; index < 16U; ++index) {
+        observed.channel_sequence.channels[index] = 44U;
+    }
+    observed.channel_sequence.channels[8] = 6U;
     memcpy(observed.election_v2.master, source, sizeof(source));
     memcpy(observed.election_v2.sync_master, source, sizeof(source));
 
     espdrop_awdl_tx_state_t state;
     assert(espdrop_awdl_tx_state_from_mif(
-        &state, self, source, "espDrop", &observed, 1000000ULL));
+        &state, self, source, "espDrop", 0x12345678U, &observed,
+        1000000ULL));
     assert(memcmp(state.self, self, sizeof(self)) == 0);
     assert(memcmp(state.master, source, sizeof(source)) == 0);
     assert(state.distance_to_master == 1);
     assert(state.master_metric == 510);
     assert(state.self_metric == 509);
     assert(state.channel == 6);
+    assert(state.peer_channel_count == 16U);
+    assert(state.peer_channels[8] == 6U);
     assert(state.aw_sequence_base == 64288);
     assert(state.sync_reference_us == 1000000ULL - 29ULL * 1024ULL);
+    assert(state.peer_time_observed_us == 1000000ULL);
+    assert(state.peer_time_reference == 0x12345678U);
+
+    uint64_t scheduled_us = 0U;
+    assert(espdrop_awdl_next_channel_window_us(
+        &state, 6U, state.sync_reference_us + 1000U, 3000U,
+        &scheduled_us));
+    assert(scheduled_us == state.sync_reference_us + 3000U);
+    assert(espdrop_awdl_next_channel_window_us(
+        &state, 6U, state.sync_reference_us + 4000U, 3000U,
+        &scheduled_us));
+    assert(scheduled_us == state.sync_reference_us +
+                               16ULL * 16ULL * 4ULL * 1024ULL + 3000ULL);
 
     uint8_t frame[ESPDROP_AWDL_TX_FRAME_CAPACITY];
     size_t length = 0;
@@ -62,8 +86,8 @@ int main(void)
     espdrop_awdl_action_t action;
     assert(espdrop_awdl_decode_action(frame, length, &action));
     assert(action.subtype == ESPDROP_AWDL_ACTION_MIF);
-    assert(action.phy_tx == 1000000U);
-    assert(action.target_tx == 1000000U);
+    assert(action.phy_tx == 0x12345678U);
+    assert(action.target_tx == 0x12345678U);
 
     espdrop_awdl_mif_t parsed;
     assert(espdrop_awdl_parse_mif(&action, &parsed) ==
@@ -120,6 +144,8 @@ int main(void)
     assert(psf_length < length);
     assert(espdrop_awdl_decode_action(frame, psf_length, &action));
     assert(action.subtype == ESPDROP_AWDL_ACTION_PSF);
+    assert(action.phy_tx == 0x12347d88U);
+    assert(action.target_tx == 0x12347d88U);
     assert(espdrop_awdl_build_action(
                frame, 32, &length, &state, ESPDROP_AWDL_ACTION_PSF,
                1010000ULL, 9) == ESPDROP_AWDL_BUILD_NO_SPACE);

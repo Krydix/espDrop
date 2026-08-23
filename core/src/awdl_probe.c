@@ -38,6 +38,8 @@ typedef struct {
 
 #define AWDL_CAPTURE_BYTES 768U
 #define AWDL_CAPTURE_PEERS 8U
+#define AWDL_DATA_CAPTURE_BYTES 96U
+#define AWDL_DATA_CAPTURE_LIMIT 8U
 
 typedef struct {
     uint8_t source[6];
@@ -67,10 +69,22 @@ typedef struct {
     bool directed_to_self;
 } awdl_data_record_t;
 
+typedef struct {
+    uint8_t source[6];
+    uint8_t destination[6];
+    uint8_t bssid[6];
+    uint16_t frame_control;
+    uint16_t frame_length;
+    uint16_t captured_length;
+    uint8_t decode_result;
+    uint8_t frame[AWDL_DATA_CAPTURE_BYTES];
+} awdl_data_capture_t;
+
 static const char *TAG = "awdl_probe";
 static QueueHandle_t record_queue;
 static QueueHandle_t capture_queue;
 static QueueHandle_t data_queue;
+static QueueHandle_t data_capture_queue;
 static espdrop_awdl_probe_stats_t stats;
 static bool started;
 static volatile uint32_t management_frames;
@@ -81,6 +95,10 @@ static volatile uint32_t apple_oui_matches;
 static volatile uint32_t awdl_header_matches;
 static volatile uint32_t decoded_frames;
 static volatile uint32_t data_frames;
+static volatile uint32_t data_frames_from_self;
+static volatile uint32_t data_frames_to_self;
+static volatile uint32_t data_frames_awdl_bssid;
+static volatile uint32_t sampled_data_candidates;
 static volatile uint32_t decoded_data_frames;
 static volatile uint32_t ipv6_data_frames;
 static volatile uint32_t neighbor_advertisements;
@@ -106,9 +124,52 @@ static void promiscuous_data_rx(const wifi_promiscuous_pkt_t *packet)
     const size_t received_length = packet->rx_ctrl.sig_len;
     const size_t length = received_length >= 4U
                               ? received_length - 4U : received_length;
+    const bool has_header = length >= 24U;
+    const bool from_self =
+        has_header && memcmp(frame + 10, station_mac, 6U) == 0;
+    const bool to_self =
+        has_header && memcmp(frame + 4, station_mac, 6U) == 0;
+    const bool awdl_bssid =
+        has_header && memcmp(frame + 16, diagnostic_awdl_bssid, 6U) == 0;
+    if (from_self) {
+        ++data_frames_from_self;
+    }
+    if (to_self) {
+        ++data_frames_to_self;
+    }
+    if (awdl_bssid) {
+        ++data_frames_awdl_bssid;
+    }
+
     espdrop_awdl_data_t data;
-    if (!espdrop_awdl_decode_data(frame, length, &data) ||
-        memcmp(data.source, station_mac, sizeof(station_mac)) == 0) {
+    const espdrop_awdl_data_decode_result_t decode_result =
+        espdrop_awdl_decode_data_ex(frame, length, &data);
+    if (decode_result != ESPDROP_AWDL_DATA_DECODE_OK) {
+        if (!from_self && (to_self || awdl_bssid) &&
+            sampled_data_candidates < AWDL_DATA_CAPTURE_LIMIT &&
+            data_capture_queue != NULL) {
+            awdl_data_capture_t capture = {
+                .frame_control = (uint16_t)frame[0] |
+                                 ((uint16_t)frame[1] << 8U),
+                .frame_length = (uint16_t)(length > UINT16_MAX
+                                               ? UINT16_MAX : length),
+                .captured_length = (uint16_t)(
+                    length > AWDL_DATA_CAPTURE_BYTES
+                        ? AWDL_DATA_CAPTURE_BYTES : length),
+                .decode_result = (uint8_t)decode_result,
+            };
+            memcpy(capture.destination, frame + 4, 6U);
+            memcpy(capture.source, frame + 10, 6U);
+            memcpy(capture.bssid, frame + 16, 6U);
+            memcpy(capture.frame, frame, capture.captured_length);
+            ++sampled_data_candidates;
+            if (xQueueSend(data_capture_queue, &capture, 0) != pdTRUE) {
+                ++stats.dropped_records;
+            }
+        }
+        return;
+    }
+    if (memcmp(data.source, station_mac, sizeof(station_mac)) == 0) {
         return;
     }
 
@@ -417,7 +478,7 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
         log_raw_capture(capture);
         return;
     }
-    espdrop_awdl_tx_lab_observe_mif(capture->source, &mif,
+    espdrop_awdl_tx_lab_observe_mif(&action, &mif,
                                     capture->received_at_us);
     apply_mif_to_peer(capture->source, &action, &mif);
     if (mif.has_sync) {
@@ -453,6 +514,31 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
                              &mif.sync.embedded_channel_sequence);
     }
     log_raw_capture(capture);
+}
+
+static void log_raw_data_capture(const awdl_data_capture_t *capture)
+{
+    char hex[AWDL_DATA_CAPTURE_BYTES * 2U + 1U];
+    for (size_t index = 0; index < capture->captured_length; ++index) {
+        (void)snprintf(hex + index * 2U, sizeof(hex) - index * 2U,
+                       "%02x", capture->frame[index]);
+    }
+    hex[capture->captured_length * 2U] = '\0';
+    ESP_LOGI(TAG,
+             "DATA-RAW result=%u fc=0x%04x "
+             "src=%02x:%02x:%02x:%02x:%02x:%02x "
+             "dst=%02x:%02x:%02x:%02x:%02x:%02x "
+             "bssid=%02x:%02x:%02x:%02x:%02x:%02x "
+             "frame=%u captured=%u data=%s",
+             capture->decode_result, capture->frame_control,
+             capture->source[0], capture->source[1], capture->source[2],
+             capture->source[3], capture->source[4], capture->source[5],
+             capture->destination[0], capture->destination[1],
+             capture->destination[2], capture->destination[3],
+             capture->destination[4], capture->destination[5],
+             capture->bssid[0], capture->bssid[1], capture->bssid[2],
+             capture->bssid[3], capture->bssid[4], capture->bssid[5],
+             capture->frame_length, capture->captured_length, hex);
 }
 
 static void probe_log_task(void *argument)
@@ -549,6 +635,12 @@ static void probe_log_task(void *argument)
             }
         }
 
+        awdl_data_capture_t data_capture;
+        while (data_capture_queue != NULL &&
+               xQueueReceive(data_capture_queue, &data_capture, 0) == pdTRUE) {
+            log_raw_data_capture(&data_capture);
+        }
+
         const TickType_t now = xTaskGetTickCount();
         if (now - last_diagnostic >= pdMS_TO_TICKS(5000)) {
             ESP_LOGI(TAG,
@@ -563,9 +655,14 @@ static void probe_log_task(void *argument)
                      (unsigned long)decoded_frames,
                      (unsigned long)stats.dropped_records);
             ESP_LOGI(TAG,
-                     "AWDL-DATA-DIAG raw=%lu decoded=%lu ipv6=%lu na=%lu "
-                     "echo_reply=%lu",
+                     "AWDL-DATA-DIAG raw=%lu self_src=%lu self_dst=%lu "
+                     "awdl_bssid=%lu sampled=%lu decoded=%lu ipv6=%lu "
+                     "na=%lu echo_reply=%lu",
                      (unsigned long)data_frames,
+                     (unsigned long)data_frames_from_self,
+                     (unsigned long)data_frames_to_self,
+                     (unsigned long)data_frames_awdl_bssid,
+                     (unsigned long)sampled_data_candidates,
                      (unsigned long)decoded_data_frames,
                      (unsigned long)ipv6_data_frames,
                      (unsigned long)neighbor_advertisements,
@@ -628,14 +725,26 @@ esp_err_t espdrop_awdl_probe_start(uint8_t channel)
         capture_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
-    if (xTaskCreate(probe_log_task, "awdl_probe_log", 6144, NULL, 5, NULL) !=
-        pdPASS) {
+    data_capture_queue = xQueueCreate(8, sizeof(awdl_data_capture_t));
+    if (data_capture_queue == NULL) {
         vQueueDelete(record_queue);
         vQueueDelete(capture_queue);
         vQueueDelete(data_queue);
         record_queue = NULL;
         capture_queue = NULL;
         data_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    if (xTaskCreate(probe_log_task, "awdl_probe_log", 6144, NULL, 5, NULL) !=
+        pdPASS) {
+        vQueueDelete(record_queue);
+        vQueueDelete(capture_queue);
+        vQueueDelete(data_queue);
+        vQueueDelete(data_capture_queue);
+        record_queue = NULL;
+        capture_queue = NULL;
+        data_queue = NULL;
+        data_capture_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
 

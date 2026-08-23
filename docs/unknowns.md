@@ -48,7 +48,8 @@ These hashes are research provenance, not dependencies in release firmware.
 - [ ] Maintain channel-6 synchronization for 30 minutes.
 - [ ] Attach link-local IPv6 through an ESP-IDF netif.
 - [x] Radio-complete ICMPv6 Echo Requests ESP → Mac; 4/20 succeeded in the
-  classified bounded run, but no reply was observed.
+  first classified bounded run and 14/14 succeeded after channel-window
+  scheduling, but no reply was observed.
 - [ ] ICMPv6 ESP → iPhone.
 - [ ] ICMPv6 iPhone → ESP.
 - [ ] mDNS multicast in both directions.
@@ -90,11 +91,13 @@ iPhone AWDL addresses afterward, but not the ESP address.
 unicast frames reported radio success. The entry was temporary and disappeared
 after the ESP lab session reset.
 
-**CONFIRMED:** during the classified Echo lab, 3/20 Neighbor Solicitations and
-4/20 Echo Requests radio-completed successfully. macOS showed the ESP neighbor
-in 53 independent polling samples. The ESP saw 147 raw data frames but decoded
-zero as AWDL data, so reverse IPv6 remains unproven and the receive decoder is
-the next investigation boundary.
+**CONFIRMED:** channel-window scheduling improved the bounded lab to 14/14
+Neighbor Solicitations and 14/14 Echo Requests radio-completed with 1–2
+microseconds measured lateness. The transmit and receive paths now use Apple's
+SNAP OUI `00:17:f2`; the receive decoder covers non-QoS, QoS, and A-MSDU forms.
+The ESP observed no data frame addressed to itself or carrying the AWDL BSSID,
+so the reverse decoder was not hiding a reply. Reverse IPv6 remains unproven;
+current Apple peer admission is the next investigation boundary.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

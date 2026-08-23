@@ -50,6 +50,8 @@ static size_t bounded_string_length(const char *value, size_t maximum)
     return length;
 }
 
+static bool state_is_valid(const espdrop_awdl_tx_state_t *state);
+
 static void make_channel_sequence(uint8_t *value, size_t padding, uint8_t channel)
 {
     memset(value, 0, 38U + padding);
@@ -77,6 +79,7 @@ bool espdrop_awdl_tx_state_from_mif(
     const uint8_t self[6],
     const uint8_t source[6],
     const char *name,
+    uint32_t peer_phy_tx,
     const espdrop_awdl_mif_t *mif,
     uint64_t observation_us)
 {
@@ -105,6 +108,8 @@ bool espdrop_awdl_tx_state_from_mif(
     (void)strncpy(state->name, name, sizeof(state->name) - 1U);
     state->sync_reference_us = observation_us >= elapsed_us
                                    ? observation_us - elapsed_us : 0U;
+    state->peer_time_observed_us = observation_us;
+    state->peer_time_reference = peer_phy_tx;
     state->aw_sequence_base = (uint16_t)(
         mif->sync.next_aw_sequence &
         (uint16_t)~(mif->sync.presence_mode - 1U));
@@ -115,6 +120,17 @@ bool espdrop_awdl_tx_state_from_mif(
     state->presence_mode = mif->sync.presence_mode;
     state->channel = mif->sync.master_channel == 0U
                          ? 6U : mif->sync.master_channel;
+    const espdrop_awdl_channel_sequence_t *peer_sequence = NULL;
+    if (mif->has_channel_sequence) {
+        peer_sequence = &mif->channel_sequence;
+    } else if (mif->sync.has_embedded_channel_sequence) {
+        peer_sequence = &mif->sync.embedded_channel_sequence;
+    }
+    if (peer_sequence != NULL) {
+        state->peer_channel_count = peer_sequence->count;
+        memcpy(state->peer_channels, peer_sequence->channels,
+               sizeof(state->peer_channels));
+    }
     state->distance_to_master =
         mif->election_v2.distance_to_master + 1U;
     state->master_metric = mif->election_v2.master_metric;
@@ -123,6 +139,50 @@ bool espdrop_awdl_tx_state_from_mif(
     state->master_counter = mif->election_v2.master_counter;
     state->self_counter = 0U;
     return true;
+}
+
+bool espdrop_awdl_next_channel_window_us(
+    const espdrop_awdl_tx_state_t *state,
+    uint8_t channel,
+    uint64_t now_us,
+    uint32_t guard_us,
+    uint64_t *scheduled_us)
+{
+    if (!state_is_valid(state) || scheduled_us == NULL ||
+        channel == 0U || state->peer_channel_count == 0U ||
+        state->peer_channel_count > ESPDROP_AWDL_MAX_CHANNELS ||
+        now_us < state->sync_reference_us) {
+        return false;
+    }
+    const uint64_t eaw_us = (uint64_t)state->aw_period_tu *
+                            state->presence_mode * AWDL_TU_US;
+    if (eaw_us == 0U || guard_us >= eaw_us) {
+        return false;
+    }
+
+    const uint64_t elapsed_eaws =
+        (now_us - state->sync_reference_us) / eaw_us;
+    const uint64_t current_start =
+        state->sync_reference_us + elapsed_eaws * eaw_us;
+    const uint64_t sequence_base =
+        state->aw_sequence_base / state->presence_mode;
+    for (uint64_t offset = 0U;
+         offset <= (uint64_t)state->peer_channel_count;
+         ++offset) {
+        const size_t index = (size_t)(
+            (sequence_base + elapsed_eaws + offset) %
+            state->peer_channel_count);
+        if (state->peer_channels[index] != channel) {
+            continue;
+        }
+        const uint64_t candidate =
+            current_start + offset * eaw_us + guard_us;
+        if (candidate >= now_us) {
+            *scheduled_us = candidate;
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool state_is_valid(const espdrop_awdl_tx_state_t *state)
@@ -185,8 +245,10 @@ espdrop_awdl_build_result_t espdrop_awdl_build_action(
     action[5] = 0x10U;
     action[6] = (uint8_t)subtype;
     action[7] = 0U;
-    put_le32(action + 8, (uint32_t)now_us);
-    put_le32(action + 12, (uint32_t)now_us);
+    const uint32_t peer_now = state->peer_time_reference +
+        (uint32_t)(now_us - state->peer_time_observed_us);
+    put_le32(action + 8, peer_now);
+    put_le32(action + 12, peer_now);
 
     const uint64_t elapsed_tu =
         (now_us - state->sync_reference_us) / AWDL_TU_US;

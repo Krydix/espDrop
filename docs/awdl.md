@@ -124,10 +124,32 @@ ESP's exact `awdl0` neighbor mapping in 53 samples during the same run.
 **NOT CONFIRMED:** the ESP decoded zero Apple AWDL data frames, Neighbor
 Advertisements, or Echo Replies despite observing 147 raw data frames. This
 proves Echo transmission reached the radio-success boundary but not that macOS
-accepted the Echo payload or replied. Gate 6 and M1 remain incomplete. The
-next focus is reverse Apple data decapsulation, including QoS and A-MSDU frame
-forms. Compact evidence is preserved in
+accepted the Echo payload or replied. Gate 6 and M1 remain incomplete. Compact
+evidence is preserved in
 [`lab/2026-08-23-awdl-echo-reverse.json`](lab/2026-08-23-awdl-echo-reverse.json).
+
+## Scheduled reverse-path result
+
+**CONFIRMED on 2026-08-23 against this Mac:** peer channel-sequence scheduling
+placed 14 probe groups into the elected master's advertised channel-6 windows
+with 1–2 microseconds measured lateness. All 14 MIFs, 14 Neighbor Solicitations,
+and 14 Echo Requests reported radio success. Action timestamps were mapped
+from the master's observed `phy_tx` clock, and the data path used the required
+Apple SNAP OUI `00:17:f2` rather than generic SNAP `00:00:00`.
+
+The receive path now distinguishes non-QoS, QoS, and A-MSDU AWDL data and logs
+only privacy-bounded candidate headers. During this run it saw 27 unrelated raw
+data frames, but zero frames sourced by or addressed to the ESP and zero frames
+using the AWDL BSSID. Therefore the decoder was not discarding a hidden reverse
+reply: macOS emitted none.
+
+**NOT CONFIRMED:** macOS still produced no directed reaction, Neighbor
+Advertisement, or Echo Reply. Channel timing, action timestamp domain, legacy
+non-QoS framing, and SNAP encapsulation are no longer the leading blockers.
+The next boundary is current Apple peer admission: identify the additional MIF
+TLVs or state transitions required beyond the legacy OWL-compatible subset.
+Compact evidence is preserved in
+[`lab/2026-08-23-awdl-scheduled-reverse.json`](lab/2026-08-23-awdl-scheduled-reverse.json).
 
 ## Timing model
 
@@ -150,10 +172,10 @@ callback.
   channel 6 at high volume. Whether channel-6 availability windows are long
   enough for reliable file transfer remains unknown.
 - **PARTIALLY CONFIRMED:** ESP-IDF can radio-complete bounded AWDL management
-  action frames without driver error. Raw unicast AWDL/IPv6 reached macOS,
-  populated its neighbor table, and four Echo Requests reported radio success.
-  Current iPhone admission and reliable reverse data-frame reception remain
-  unknown.
+  action frames without driver error. Scheduled raw unicast AWDL/IPv6 now
+  completes reliably in advertised channel-6 windows, but macOS did not emit a
+  reverse data frame after 14 Neighbor Solicitations and 14 Echo Requests.
+  Current peer admission and reverse data-frame reception remain unknown.
 - **UNKNOWN:** sustainable bidirectional throughput under BLE coexistence and
   channel switching.
 - **UNKNOWN:** whether an infrastructure STA connection can coexist with AWDL.

@@ -33,6 +33,21 @@ typedef struct {
     size_t icmp_payload_length;
 } espdrop_awdl_ipv6_t;
 
+typedef enum {
+    ESPDROP_AWDL_DATA_DECODE_OK = 0,
+    ESPDROP_AWDL_DATA_DECODE_INVALID_ARGUMENT,
+    ESPDROP_AWDL_DATA_DECODE_TOO_SHORT,
+    ESPDROP_AWDL_DATA_DECODE_NOT_DATA,
+    ESPDROP_AWDL_DATA_DECODE_DISTRIBUTION_SYSTEM,
+    ESPDROP_AWDL_DATA_DECODE_BSSID,
+    ESPDROP_AWDL_DATA_DECODE_SUBTYPE,
+    ESPDROP_AWDL_DATA_DECODE_QOS_TOO_SHORT,
+    ESPDROP_AWDL_DATA_DECODE_AMSDU_TOO_SHORT,
+    ESPDROP_AWDL_DATA_DECODE_AMSDU_LENGTH,
+    ESPDROP_AWDL_DATA_DECODE_LLC,
+    ESPDROP_AWDL_DATA_DECODE_HEADER,
+} espdrop_awdl_data_decode_result_t;
+
 void espdrop_awdl_link_local_from_mac(
     const uint8_t mac[6],
     uint8_t address[16]);
@@ -58,6 +73,11 @@ bool espdrop_awdl_build_echo_request(
     uint16_t echo_sequence);
 
 bool espdrop_awdl_decode_data(
+    const uint8_t *frame,
+    size_t length,
+    espdrop_awdl_data_t *data);
+
+espdrop_awdl_data_decode_result_t espdrop_awdl_decode_data_ex(
     const uint8_t *frame,
     size_t length,
     espdrop_awdl_data_t *data);

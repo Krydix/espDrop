@@ -27,11 +27,15 @@ typedef struct {
     uint8_t sync_master[6];
     char name[ESPDROP_AWDL_TX_NAME_BYTES];
     uint64_t sync_reference_us;
+    uint64_t peer_time_observed_us;
+    uint32_t peer_time_reference;
     uint16_t aw_sequence_base;
     uint16_t aw_period_tu;
     uint16_t action_frame_period_tu;
     uint8_t presence_mode;
     uint8_t channel;
+    uint8_t peer_channel_count;
+    uint8_t peer_channels[ESPDROP_AWDL_MAX_CHANNELS];
     uint32_t distance_to_master;
     uint32_t master_metric;
     uint32_t self_metric;
@@ -44,8 +48,16 @@ bool espdrop_awdl_tx_state_from_mif(
     const uint8_t self[6],
     const uint8_t source[6],
     const char *name,
+    uint32_t peer_phy_tx,
     const espdrop_awdl_mif_t *mif,
     uint64_t observation_us);
+
+bool espdrop_awdl_next_channel_window_us(
+    const espdrop_awdl_tx_state_t *state,
+    uint8_t channel,
+    uint64_t now_us,
+    uint32_t guard_us,
+    uint64_t *scheduled_us);
 
 espdrop_awdl_build_result_t espdrop_awdl_build_action(
     uint8_t *frame,

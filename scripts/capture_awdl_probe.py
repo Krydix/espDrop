@@ -48,6 +48,13 @@ TX_FRAME = re.compile(
     re.IGNORECASE,
 )
 
+TX_WINDOW = re.compile(
+    r"TX-LAB-WINDOW number=(?P<number>\d+) "
+    r"scheduled=(?P<scheduled>\d+) actual=(?P<actual>\d+) "
+    r"lateness_us=(?P<lateness_us>\d+)",
+    re.IGNORECASE,
+)
+
 TX_SUMMARY = re.compile(
     r"TX-LAB-SUMMARY action_attempted=(?P<action_attempted>\d+) "
     r"action_accepted=(?P<action_accepted>\d+) "
@@ -115,9 +122,20 @@ AWDL_DATA = re.compile(
 )
 
 AWDL_DATA_DIAGNOSTIC = re.compile(
-    r"AWDL-DATA-DIAG raw=(?P<raw>\d+) decoded=(?P<decoded>\d+) "
-    r"ipv6=(?P<ipv6>\d+) na=(?P<neighbor_advertisements>\d+) "
+    r"AWDL-DATA-DIAG raw=(?P<raw>\d+) "
+    r"self_src=(?P<self_source>\d+) self_dst=(?P<self_destination>\d+) "
+    r"awdl_bssid=(?P<awdl_bssid>\d+) sampled=(?P<sampled>\d+) "
+    r"decoded=(?P<decoded>\d+) ipv6=(?P<ipv6>\d+) "
+    r"na=(?P<neighbor_advertisements>\d+) "
     r"echo_reply=(?P<echo_replies>\d+)",
+    re.IGNORECASE,
+)
+
+RAW_DATA = re.compile(
+    r"DATA-RAW result=(?P<result>\d+) fc=(?P<frame_control>0x[0-9a-f]+) "
+    r"src=(?P<source>[0-9a-f:]+) dst=(?P<destination>[0-9a-f:]+) "
+    r"bssid=(?P<bssid>[0-9a-f:]+) frame=(?P<frame_length>\d+) "
+    r"captured=(?P<captured_length>\d+) data=(?P<data>[0-9a-f]+)",
     re.IGNORECASE,
 )
 
@@ -148,6 +166,7 @@ def main() -> None:
     raw_mifs = {}
     mif_results = []
     tx_frames = []
+    tx_windows = []
     tx_summary = None
     tx_reactions = []
     tx_neighbor_solicitations = []
@@ -156,6 +175,7 @@ def main() -> None:
     tx_echo_replies = []
     awdl_data_frames = []
     awdl_data_diagnostics = []
+    raw_data_captures = []
     boot_lines = []
     with serial.Serial(args.port, 115200, timeout=0.25) as connection:
         connection.dtr = False
@@ -203,6 +223,12 @@ def main() -> None:
                 for key in ("number", "subtype", "bytes"):
                     record[key] = int(record[key])
                 tx_frames.append(record)
+            tx_window_match = TX_WINDOW.search(line)
+            if tx_window_match:
+                tx_windows.append({
+                    key: int(value)
+                    for key, value in tx_window_match.groupdict().items()
+                })
             tx_summary_match = TX_SUMMARY.search(line)
             if tx_summary_match:
                 tx_summary = {
@@ -254,6 +280,15 @@ def main() -> None:
                     for key, value in
                     data_diagnostic_match.groupdict().items()
                 })
+            raw_data_match = RAW_DATA.search(line)
+            if raw_data_match:
+                capture = raw_data_match.groupdict()
+                for key in ("result", "frame_length", "captured_length"):
+                    capture[key] = int(capture[key])
+                capture["frame_control"] = int(
+                    capture["frame_control"], 16
+                )
+                raw_data_captures.append(capture)
 
     unique_sources = sorted({item["source"] for item in frames})
     raw_captures = []
@@ -287,6 +322,7 @@ def main() -> None:
         "rawMifCaptures": sorted(raw_captures, key=lambda item: item["source"]),
         "mifResults": mif_results,
         "txLab": {
+            "scheduledWindows": tx_windows,
             "sampledFrames": tx_frames,
             "summary": tx_summary,
             "reactions": tx_reactions,
@@ -297,6 +333,7 @@ def main() -> None:
         },
         "awdlData": {
             "frames": awdl_data_frames,
+            "candidateCaptures": raw_data_captures,
             "diagnostics": awdl_data_diagnostics,
             "finalDiagnostics": (
                 awdl_data_diagnostics[-1]
