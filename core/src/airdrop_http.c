@@ -94,6 +94,45 @@ static int hex_digit(uint8_t value)
     return value >= 'a' && value <= 'f' ? value - 'a' + 10 : -1;
 }
 
+static void match_stream_byte(
+    const char *needle,
+    size_t *matched,
+    uint8_t byte)
+{
+    const size_t needle_length = strlen(needle);
+    if (*matched >= needle_length) {
+        return;
+    }
+    if (byte == (uint8_t)needle[*matched]) {
+        ++*matched;
+    } else {
+        *matched = byte == (uint8_t)needle[0] ? 1U : 0U;
+    }
+}
+
+static void finish_chunked_result(
+    espdrop_airdrop_http_result_t *result,
+    const uint8_t prefix[8],
+    size_t prefix_bytes,
+    size_t decoded,
+    size_t receiver_name_match,
+    size_t ids_session_match,
+    size_t receiver_pseudonym_match,
+    size_t receiver_push_token_match)
+{
+    result->body_bytes = decoded;
+    result->binary_plist =
+        prefix_bytes == 8U && memcmp(prefix, "bplist00", 8U) == 0;
+    result->receiver_computer_name_key =
+        receiver_name_match == strlen("ReceiverComputerName");
+    result->ids_session_id_key =
+        ids_session_match == strlen("IDSSessionID");
+    result->receiver_pseudonym_key =
+        receiver_pseudonym_match == strlen("ReceiverPseudonym");
+    result->receiver_push_token_key =
+        receiver_push_token_match == strlen("ReceiverPushToken");
+}
+
 static espdrop_airdrop_http_parse_t parse_chunked_body(
     const uint8_t *response,
     size_t length,
@@ -101,10 +140,12 @@ static espdrop_airdrop_http_parse_t parse_chunked_body(
     bool end_of_stream,
     espdrop_airdrop_http_result_t *result)
 {
-    static const char receiver_key[] = "ReceiverComputerName";
     uint8_t prefix[8] = {0};
     size_t prefix_bytes = 0U;
-    size_t key_match = 0U;
+    size_t receiver_name_match = 0U;
+    size_t ids_session_match = 0U;
+    size_t receiver_pseudonym_match = 0U;
+    size_t receiver_push_token_match = 0U;
     size_t decoded = 0U;
     while (offset < length) {
         size_t line_end = offset;
@@ -136,22 +177,18 @@ static espdrop_airdrop_http_parse_t parse_chunked_body(
         if (chunk_bytes == 0U) {
             if (offset + 2U <= length && response[offset] == '\r' &&
                 response[offset + 1U] == '\n') {
-                result->body_bytes = decoded;
-                result->binary_plist =
-                    prefix_bytes == sizeof(prefix) &&
-                    memcmp(prefix, "bplist00", sizeof(prefix)) == 0;
-                result->receiver_computer_name_key =
-                    key_match == sizeof(receiver_key) - 1U;
+                finish_chunked_result(
+                    result, prefix, prefix_bytes, decoded,
+                    receiver_name_match, ids_session_match,
+                    receiver_pseudonym_match, receiver_push_token_match);
                 return ESPDROP_AIRDROP_HTTP_COMPLETE;
             }
             for (size_t index = offset; index + 3U < length; ++index) {
                 if (memcmp(response + index, "\r\n\r\n", 4U) == 0) {
-                    result->body_bytes = decoded;
-                    result->binary_plist =
-                        prefix_bytes == sizeof(prefix) &&
-                        memcmp(prefix, "bplist00", sizeof(prefix)) == 0;
-                    result->receiver_computer_name_key =
-                        key_match == sizeof(receiver_key) - 1U;
+                    finish_chunked_result(
+                        result, prefix, prefix_bytes, decoded,
+                        receiver_name_match, ids_session_match,
+                        receiver_pseudonym_match, receiver_push_token_match);
                     return ESPDROP_AIRDROP_HTTP_COMPLETE;
                 }
             }
@@ -168,13 +205,13 @@ static espdrop_airdrop_http_parse_t parse_chunked_body(
             if (prefix_bytes < sizeof(prefix)) {
                 prefix[prefix_bytes++] = byte;
             }
-            if (key_match < sizeof(receiver_key) - 1U) {
-                if (byte == (uint8_t)receiver_key[key_match]) {
-                    ++key_match;
-                } else {
-                    key_match = byte == (uint8_t)receiver_key[0] ? 1U : 0U;
-                }
-            }
+            match_stream_byte("ReceiverComputerName", &receiver_name_match,
+                              byte);
+            match_stream_byte("IDSSessionID", &ids_session_match, byte);
+            match_stream_byte("ReceiverPseudonym", &receiver_pseudonym_match,
+                              byte);
+            match_stream_byte("ReceiverPushToken", &receiver_push_token_match,
+                              byte);
         }
         decoded += chunk_bytes;
         offset += chunk_bytes;
@@ -334,5 +371,21 @@ espdrop_airdrop_http_parse_t espdrop_airdrop_parse_discover_response(
         result->body_bytes >= 8U && memcmp(body, "bplist00", 8U) == 0;
     result->receiver_computer_name_key = contains_bytes(
         body, result->body_bytes, "ReceiverComputerName");
+    result->ids_session_id_key = contains_bytes(
+        body, result->body_bytes, "IDSSessionID");
+    result->receiver_pseudonym_key = contains_bytes(
+        body, result->body_bytes, "ReceiverPseudonym");
+    result->receiver_push_token_key = contains_bytes(
+        body, result->body_bytes, "ReceiverPushToken");
     return ESPDROP_AIRDROP_HTTP_COMPLETE;
+}
+
+espdrop_airdrop_http_parse_t espdrop_airdrop_parse_ask_response(
+    const uint8_t *response,
+    size_t length,
+    bool end_of_stream,
+    espdrop_airdrop_http_result_t *result)
+{
+    return espdrop_airdrop_parse_discover_response(
+        response, length, end_of_stream, result);
 }

@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-24",
+  "scope": "attended one-file Everyone-mode AirDrop /Ask from ESP32-S3 to a stock iPhone",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "baseHead": "3de7cfc",
+    "normalBuildTransmitEnabled": false
+  },
+  "receiver": {
+    "peerMac": "52:f4:36:b8:fd:f5",
+    "instance": "49ac76e51c6d._airdrop._tcp.local",
+    "host": "4e471a7b-17c4-48b3-ad71-d4998138a323.local",
+    "ipv6": "fe80::50f4:36ff:feb8:fdf5",
+    "port": 8770
+  },
+  "request": {
+    "method": "POST",
+    "path": "/Ask",
+    "fileName": "hello.jpg",
+    "fileType": "public.jpeg",
+    "requestBytes": 712,
+    "transferID": "773158D2-E3B4-4CFD-8636-ED20C28C5090",
+    "firstRequestOnSenderConnection": true,
+    "bounded": true,
+    "uploadEnabled": false
+  },
+  "successfulRun": {
+    "nativePromptObservedByUser": true,
+    "explicitlyAcceptedByUser": true,
+    "tcpConnected": true,
+    "tlsConnected": true,
+    "tlsVersion": "TLSv1.2",
+    "cipher": "TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384",
+    "httpStatus": 200,
+    "responseBytes": 442,
+    "bodyBytes": 359,
+    "transferEncoding": "chunked",
+    "binaryPlist": true,
+    "receiverComputerNameKey": true,
+    "idsSessionIDKey": true,
+    "receiverPseudonymKey": true,
+    "receiverPushTokenKey": true
+  },
+  "negativeControl": {
+    "sequence": "/Discover then /Ask on one connection",
+    "nativePromptObservedByUser": false,
+    "askResponseBytes": 0,
+    "error": -26624,
+    "errorMeaning": "MBEDTLS_ERR_SSL_TIMEOUT",
+    "resolution": "Match OpenDrop's send flow: DNS-SD discovery precedes a fresh sender connection whose first HTTP request is /Ask."
+  },
+  "result": {
+    "confirmed": "A stock iPhone displayed the native AirDrop prompt for espDrop's hello.jpg intent and returned HTTP 200 after explicit user acceptance.",
+    "notConfirmed": "No /Upload was sent, so TransferID continuity, archive framing, payload transfer, and file delivery remain unproven.",
+    "nextFocus": "Implement bounded ODC cpio streaming and one deliberately attended /Upload that reuses this accepted connection and TransferID."
+  }
+}

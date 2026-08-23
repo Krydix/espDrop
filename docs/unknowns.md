@@ -173,7 +173,15 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
   Contacts Only identity validation and the full set of accepted modern TLS
   profiles remain separate unknowns.
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
+  ESP-to-iPhone `/Discover` and `/Ask` are now captured and accepted; `/Upload`
+  and the opposite direction remain open. The successful attended `/Ask` is in
+  [`lab/2026-08-24-airdrop-ask.json`](lab/2026-08-24-airdrop-ask.json).
 - [ ] Confirm TransferID and connection-reuse requirements.
+  The Ask-to-Upload continuity requirement is reference-derived and pinned by
+  host tests. The live Ask proves iOS accepts the announced UUID but Upload has
+  not yet exercised continuity. OpenDrop source inspection and the first failed
+  lab arm also confirm `/Ask` must begin the sender connection rather than be
+  appended to the discovery connection.
 - [ ] Confirm cpio versus dvzip by file type.
 - [ ] Prove bounded streaming receive to microSD.
 - [ ] Prove one JPEG send from microSD.

@@ -41,9 +41,8 @@ The stable research baseline is:
 **REFERENCE:** OpenDrop represents request and response metadata as binary
 property lists and advertises a receiver TXT `flags` value.
 
-**REFERENCE (iOS 26 capture, not yet reproduced here):** the
-airdrop-mt7921 project reports chunked `/Discover` and `/Ask` bodies,
-`application/x-dvzip` photo uploads, and a requirement to declare a
+**REFERENCE (iOS 26 capture):** the airdrop-mt7921 project reports
+`application/x-dvzip` photo uploads and a requirement to declare a
 `TransferID` in `/Ask` and reuse it in `/Upload`. Its reported dvzip
 body is a sequence of four-byte big-endian length/flag headers and stored or
 zlib-compressed blocks containing an ODC cpio archive.
@@ -59,6 +58,18 @@ chunked framing. The first run established HTTP acceptance but preceded the
 chunk decoder, so its response plist fields remain unclaimed; subsequent runs
 missed the receiver's TCP availability window. Compact evidence is in
 [`lab/2026-08-24-airdrop-discover.json`](lab/2026-08-24-airdrop-discover.json).
+
+**CONFIRMED on the espDrop S3 test target:** DNS-SD discovery followed by a
+fresh sender TLS connection whose first request was a bounded binary-plist
+`POST /Ask`. A stock iPhone displayed the native AirDrop prompt for
+`hello.jpg`; after the user explicitly accepted, it returned `HTTP 200` with a
+complete chunked binary-plist response. The response contained the receiver
+computer-name, IDS-session, pseudonym, and push-token keys. The negative
+control—appending `/Ask` after `/Discover` on one connection—timed out without
+a prompt. This matches OpenDrop's separation between its earlier find flow and
+the new client connection used by send. No `/Upload` was armed. Compact
+evidence is in
+[`lab/2026-08-24-airdrop-ask.json`](lab/2026-08-24-airdrop-ask.json).
 
 ## Identity and discoverability
 

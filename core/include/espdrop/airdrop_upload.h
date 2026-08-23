@@ -19,6 +19,8 @@ typedef struct {
     char sender_push_token[ESPDROP_AIRDROP_SENDER_PUSH_TOKEN_BYTES];
 } espdrop_airdrop_upload_identity_t;
 
+bool espdrop_airdrop_transfer_id_valid(const char *value);
+
 /* Validate the observed iOS 26 Everyone-mode field shapes. This proves only
  * syntax; espDrop does not claim that the pseudonym or push token is an Apple
  * identity. */

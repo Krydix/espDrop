@@ -9,7 +9,7 @@ static bool is_upper_hex(char value)
            (value >= 'A' && value <= 'F');
 }
 
-static bool transfer_id_valid(const char *value)
+bool espdrop_airdrop_transfer_id_valid(const char *value)
 {
     if (value == NULL || strlen(value) != 36U) {
         return false;
@@ -59,7 +59,8 @@ static bool push_token_valid(const char *value)
 bool espdrop_airdrop_upload_identity_valid(
     const espdrop_airdrop_upload_identity_t *identity)
 {
-    return identity != NULL && transfer_id_valid(identity->transfer_id) &&
+    return identity != NULL &&
+           espdrop_airdrop_transfer_id_valid(identity->transfer_id) &&
            pseudonym_valid(identity->sender_pseudonym) &&
            push_token_valid(identity->sender_push_token);
 }

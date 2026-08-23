@@ -369,13 +369,24 @@ static void probe_airdrop_tcp_service(
         ++stats.airdrop_tls_attempts;
         espdrop_airdrop_tls_result_t tls;
         espdrop_airdrop_discover_result_t discover;
+#if CONFIG_ESPDROP_AIRDROP_ASK_LAB
+        espdrop_airdrop_ask_result_t ask;
+        memset(&discover, 0, sizeof(discover));
+#endif
         /* A TLS flight can span several AWDL availability windows. The
          * receiver's first handshake response has been observed near the
          * former six-second bound, so leave enough time for our certificate
          * flight and the receiver's Finished message. */
-        const bool tls_connected = espdrop_airdrop_tls_discover_probe(
+        const bool tls_connected =
+#if CONFIG_ESPDROP_AIRDROP_ASK_LAB
+            espdrop_airdrop_tls_ask_probe(
+                socket_fd, service->target, service->port, 12000U, 30000U,
+                &tls, &ask);
+#else
+            espdrop_airdrop_tls_discover_probe(
             socket_fd, service->target, service->port, 12000U, 8000U,
             &tls, &discover);
+#endif
         if (tls_connected) {
             ++stats.airdrop_tls_connected;
         }
@@ -400,22 +411,54 @@ static void probe_airdrop_tcp_service(
         if (discover_accepted) {
             ++stats.airdrop_discover_accepted;
         }
+        if (discover.attempted) {
+            ESP_LOGW(TAG,
+                     "AWDL-AIRDROP-DISCOVER instance=%s attempted=1 "
+                     "result=%s error=%d status=%u request_bytes=%u "
+                     "response_bytes=%u body_bytes=%u bplist=%u "
+                     "receiver_name=%u chunked=%u type=%s encoding=%s",
+                     service->instance,
+                     discover_accepted ? "accepted" :
+                         (discover.response_complete ? "rejected" : "failed"),
+                     discover.error, discover.http_status,
+                     (unsigned)discover.request_bytes,
+                     (unsigned)discover.response_bytes,
+                     (unsigned)discover.body_bytes,
+                     discover.binary_plist ? 1U : 0U,
+                     discover.receiver_computer_name_key ? 1U : 0U,
+                     discover.chunked ? 1U : 0U,
+                     discover.content_type, discover.content_encoding);
+        }
+#if CONFIG_ESPDROP_AIRDROP_ASK_LAB
+        if (ask.attempted) {
+            ++stats.airdrop_ask_attempts;
+        }
+        if (ask.response_complete) {
+            ++stats.airdrop_ask_responses;
+        }
+        const bool ask_accepted =
+            ask.response_complete && ask.http_status == 200U;
+        if (ask_accepted) {
+            ++stats.airdrop_ask_accepted;
+        }
         ESP_LOGW(TAG,
-                 "AWDL-AIRDROP-DISCOVER instance=%s attempted=%u "
-                 "result=%s error=%d status=%u request_bytes=%u "
-                 "response_bytes=%u body_bytes=%u bplist=%u "
-                 "receiver_name=%u chunked=%u type=%s encoding=%s",
-                 service->instance, discover.attempted ? 1U : 0U,
-                 discover_accepted ? "accepted" :
-                     (discover.response_complete ? "rejected" : "failed"),
-                 discover.error, discover.http_status,
-                 (unsigned)discover.request_bytes,
-                 (unsigned)discover.response_bytes,
-                 (unsigned)discover.body_bytes,
-                 discover.binary_plist ? 1U : 0U,
-                 discover.receiver_computer_name_key ? 1U : 0U,
-                 discover.chunked ? 1U : 0U,
-                 discover.content_type, discover.content_encoding);
+                 "AWDL-AIRDROP-ASK instance=%s attempted=%u result=%s "
+                 "error=%d status=%u request_bytes=%u response_bytes=%u "
+                 "body_bytes=%u bplist=%u receiver_name=%u ids_session=%u "
+                 "receiver_pseudonym=%u receiver_push_token=%u chunked=%u "
+                 "transfer_id=%s upload=disabled",
+                 service->instance, ask.attempted ? 1U : 0U,
+                 ask_accepted ? "accepted" :
+                     (ask.response_complete ? "rejected" : "failed"),
+                 ask.error, ask.http_status, (unsigned)ask.request_bytes,
+                 (unsigned)ask.response_bytes, (unsigned)ask.body_bytes,
+                 ask.binary_plist ? 1U : 0U,
+                 ask.receiver_computer_name_key ? 1U : 0U,
+                 ask.ids_session_id_key ? 1U : 0U,
+                 ask.receiver_pseudonym_key ? 1U : 0U,
+                 ask.receiver_push_token_key ? 1U : 0U,
+                 ask.chunked ? 1U : 0U, ask.transfer_id);
+#endif
     }
 #endif
     close(socket_fd);

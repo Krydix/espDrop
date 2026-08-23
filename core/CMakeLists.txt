@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "src/espdrop.c"
+        "src/airdrop_ask.c"
         "src/airdrop_http.c"
         "src/airdrop_upload.c"
         "src/airdrop_tls.c"

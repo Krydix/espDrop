@@ -8,6 +8,7 @@
 #if CONFIG_ESPDROP_AIRDROP_TLS_LAB
 
 #include "esp_timer.h"
+#include "espdrop/airdrop_ask.h"
 #include "espdrop/airdrop_http.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -33,9 +34,19 @@ extern const unsigned char airdrop_lab_private_key_end[]
 #define AIRDROP_DISCOVER_ERROR_BUILD -1
 #define AIRDROP_DISCOVER_ERROR_PARSE -2
 #define AIRDROP_DISCOVER_ERROR_OVERFLOW -3
+#define AIRDROP_ASK_ERROR_BUILD -11
+#define AIRDROP_ASK_ERROR_RANDOM -12
+#define AIRDROP_ASK_ERROR_PARSE -13
+#define AIRDROP_ASK_ERROR_OVERFLOW -14
+#define AIRDROP_ASK_BODY_BYTES ESPDROP_AIRDROP_ASK_BODY_MAX_BYTES
+#define AIRDROP_ASK_REQUEST_BYTES ESPDROP_AIRDROP_ASK_REQUEST_MAX_BYTES
+#define AIRDROP_ASK_RESPONSE_BYTES 4096U
 
 static uint8_t discover_request[AIRDROP_DISCOVER_REQUEST_BYTES];
 static uint8_t discover_response[AIRDROP_DISCOVER_RESPONSE_BYTES];
+static uint8_t ask_body[AIRDROP_ASK_BODY_BYTES];
+static uint8_t ask_request[AIRDROP_ASK_REQUEST_BYTES];
+static uint8_t ask_response[AIRDROP_ASK_RESPONSE_BYTES];
 
 static void copy_negotiated_text(
     char *destination,
@@ -165,6 +176,146 @@ static void perform_discover(
     result->error = MBEDTLS_ERR_SSL_TIMEOUT;
 }
 
+static void copy_ask_http_result(
+    espdrop_airdrop_ask_result_t *destination,
+    const espdrop_airdrop_http_result_t *source)
+{
+    destination->http_status = source->status_code;
+    destination->body_bytes = source->body_bytes;
+    destination->binary_plist = source->binary_plist;
+    destination->chunked = source->chunked;
+    destination->receiver_computer_name_key =
+        source->receiver_computer_name_key;
+    destination->ids_session_id_key = source->ids_session_id_key;
+    destination->receiver_pseudonym_key = source->receiver_pseudonym_key;
+    destination->receiver_push_token_key = source->receiver_push_token_key;
+}
+
+static bool write_tls_request(
+    mbedtls_ssl_context *ssl,
+    const uint8_t *request,
+    size_t request_bytes,
+    int64_t deadline_us,
+    int *error)
+{
+    size_t written = 0U;
+    while (written < request_bytes && esp_timer_get_time() < deadline_us) {
+        const int status = mbedtls_ssl_write(
+            ssl, request + written, request_bytes - written);
+        if (status > 0) {
+            written += (size_t)status;
+        } else if (status == MBEDTLS_ERR_SSL_WANT_READ ||
+                   status == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            vTaskDelay(pdMS_TO_TICKS(10U));
+        } else {
+            *error = status;
+            return false;
+        }
+    }
+    if (written != request_bytes) {
+        *error = MBEDTLS_ERR_SSL_TIMEOUT;
+        return false;
+    }
+    return true;
+}
+
+static void perform_ask(
+    mbedtls_ssl_context *ssl,
+    mbedtls_ctr_drbg_context *random,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t timeout_ms,
+    espdrop_airdrop_ask_result_t *result)
+{
+    memset(result, 0, sizeof(*result));
+    uint8_t transfer_random[16];
+    uint8_t sender_random[6];
+    if (mbedtls_ctr_drbg_random(random, transfer_random,
+                               sizeof(transfer_random)) != 0 ||
+        mbedtls_ctr_drbg_random(random, sender_random,
+                               sizeof(sender_random)) != 0) {
+        result->error = AIRDROP_ASK_ERROR_RANDOM;
+        return;
+    }
+    char sender_id[ESPDROP_AIRDROP_SENDER_ID_BYTES];
+    espdrop_airdrop_format_transfer_id(result->transfer_id, transfer_random);
+    espdrop_airdrop_format_sender_id(sender_id, sender_random);
+    const espdrop_airdrop_ask_file_t file = {
+        .sender_computer_name = "espDrop",
+        .sender_model_name = "ESP32-S3",
+        .sender_id = sender_id,
+        .transfer_id = result->transfer_id,
+        .file_name = "hello.jpg",
+        .file_type = "public.jpeg",
+    };
+    const size_t body_bytes = espdrop_airdrop_build_ask_body(
+        ask_body, sizeof(ask_body), &file);
+    result->request_bytes = espdrop_airdrop_build_ask_request(
+        ask_request, sizeof(ask_request), server_name, server_port,
+        ask_body, body_bytes);
+    if (body_bytes == 0U || result->request_bytes == 0U) {
+        result->error = AIRDROP_ASK_ERROR_BUILD;
+        return;
+    }
+    result->attempted = true;
+    const int64_t deadline_us =
+        esp_timer_get_time() + (int64_t)timeout_ms * 1000;
+    if (!write_tls_request(ssl, ask_request, result->request_bytes,
+                           deadline_us, &result->error)) {
+        return;
+    }
+
+    size_t received = 0U;
+    espdrop_airdrop_http_result_t parsed;
+    while (esp_timer_get_time() < deadline_us) {
+        if (received == sizeof(ask_response)) {
+            result->response_bytes = received;
+            result->error = AIRDROP_ASK_ERROR_OVERFLOW;
+            return;
+        }
+        const int status = mbedtls_ssl_read(
+            ssl, ask_response + received, sizeof(ask_response) - received);
+        bool end_of_stream = false;
+        if (status > 0) {
+            received += (size_t)status;
+        } else if (status == MBEDTLS_ERR_SSL_WANT_READ ||
+                   status == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            vTaskDelay(pdMS_TO_TICKS(10U));
+            continue;
+        } else if (status == 0 ||
+                   status == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+            end_of_stream = true;
+        } else {
+            result->response_bytes = received;
+            result->error = status;
+            return;
+        }
+        const espdrop_airdrop_http_parse_t parse =
+            espdrop_airdrop_parse_ask_response(
+                ask_response, received, end_of_stream, &parsed);
+        if (parse == ESPDROP_AIRDROP_HTTP_COMPLETE) {
+            result->response_complete = true;
+            result->response_bytes = received;
+            copy_ask_http_result(result, &parsed);
+            return;
+        }
+        if (parse == ESPDROP_AIRDROP_HTTP_INVALID || end_of_stream) {
+            result->response_bytes = received;
+            copy_ask_http_result(result, &parsed);
+            result->error = AIRDROP_ASK_ERROR_PARSE;
+            return;
+        }
+    }
+    result->response_bytes = received;
+    const espdrop_airdrop_http_parse_t parse =
+        espdrop_airdrop_parse_ask_response(
+            ask_response, received, false, &parsed);
+    if (parse != ESPDROP_AIRDROP_HTTP_INVALID) {
+        copy_ask_http_result(result, &parsed);
+    }
+    result->error = MBEDTLS_ERR_SSL_TIMEOUT;
+}
+
 static bool run_tls(
     int socket_fd,
     const char *server_name,
@@ -172,7 +323,9 @@ static bool run_tls(
     espdrop_airdrop_tls_result_t *result,
     uint16_t discover_port,
     uint32_t discover_timeout_ms,
-    espdrop_airdrop_discover_result_t *discover_result)
+    espdrop_airdrop_discover_result_t *discover_result,
+    uint32_t ask_timeout_ms,
+    espdrop_airdrop_ask_result_t *ask_result)
 {
     if (socket_fd < 0 || timeout_ms == 0U || result == NULL) {
         return false;
@@ -291,6 +444,13 @@ static bool run_tls(
             perform_discover(&ssl, server_name, discover_port,
                              discover_timeout_ms, discover_result);
         }
+        if (ask_result != NULL &&
+            (discover_result == NULL ||
+             (discover_result->response_complete &&
+              discover_result->http_status == 200U))) {
+            perform_ask(&ssl, &random, server_name, discover_port,
+                        ask_timeout_ms, ask_result);
+        }
     }
 
 done:
@@ -310,7 +470,8 @@ bool espdrop_airdrop_tls_probe(
     uint32_t timeout_ms,
     espdrop_airdrop_tls_result_t *result)
 {
-    return run_tls(socket_fd, server_name, timeout_ms, result, 0U, 0U, NULL);
+    return run_tls(socket_fd, server_name, timeout_ms, result, 0U, 0U, NULL,
+                   0U, NULL);
 }
 
 bool espdrop_airdrop_tls_discover_probe(
@@ -328,7 +489,25 @@ bool espdrop_airdrop_tls_discover_probe(
     }
     memset(discover_result, 0, sizeof(*discover_result));
     return run_tls(socket_fd, server_name, handshake_timeout_ms, tls_result,
-                   server_port, discover_timeout_ms, discover_result);
+                   server_port, discover_timeout_ms, discover_result, 0U,
+                   NULL);
+}
+
+bool espdrop_airdrop_tls_ask_probe(
+    int socket_fd,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t handshake_timeout_ms,
+    uint32_t ask_timeout_ms,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_ask_result_t *ask_result)
+{
+    if (server_port == 0U || ask_timeout_ms == 0U || ask_result == NULL) {
+        return false;
+    }
+    memset(ask_result, 0, sizeof(*ask_result));
+    return run_tls(socket_fd, server_name, handshake_timeout_ms, tls_result,
+                   server_port, 0U, NULL, ask_timeout_ms, ask_result);
 }
 
 #else
@@ -370,6 +549,31 @@ bool espdrop_airdrop_tls_discover_probe(
     if (discover_result != NULL) {
         memset(discover_result, 0, sizeof(*discover_result));
         discover_result->error = -1;
+    }
+    return false;
+}
+
+bool espdrop_airdrop_tls_ask_probe(
+    int socket_fd,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t handshake_timeout_ms,
+    uint32_t ask_timeout_ms,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_ask_result_t *ask_result)
+{
+    (void)socket_fd;
+    (void)server_name;
+    (void)server_port;
+    (void)handshake_timeout_ms;
+    (void)ask_timeout_ms;
+    if (tls_result != NULL) {
+        memset(tls_result, 0, sizeof(*tls_result));
+        tls_result->error = -1;
+    }
+    if (ask_result != NULL) {
+        memset(ask_result, 0, sizeof(*ask_result));
+        ask_result->error = -1;
     }
     return false;
 }

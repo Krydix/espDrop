@@ -272,6 +272,22 @@ AIRDROP_DISCOVER = re.compile(
     re.IGNORECASE,
 )
 
+AIRDROP_ASK = re.compile(
+    r"AWDL-AIRDROP-ASK instance=(?P<instance>[^ ]+) "
+    r"attempted=(?P<attempted>\d+) result=(?P<result>[^ ]+) "
+    r"error=(?P<error>-?\d+) status=(?P<status>\d+) "
+    r"request_bytes=(?P<request_bytes>\d+) "
+    r"response_bytes=(?P<response_bytes>\d+) "
+    r"body_bytes=(?P<body_bytes>\d+) bplist=(?P<bplist>\d+) "
+    r"receiver_name=(?P<receiver_name>\d+) "
+    r"ids_session=(?P<ids_session>\d+) "
+    r"receiver_pseudonym=(?P<receiver_pseudonym>\d+) "
+    r"receiver_push_token=(?P<receiver_push_token>\d+) "
+    r"chunked=(?P<chunked>\d+) transfer_id=(?P<transfer_id>[^ ]+) "
+    r"upload=(?P<upload>[^ ]+)",
+    re.IGNORECASE,
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -325,6 +341,7 @@ def main() -> None:
     airdrop_tcp = []
     airdrop_tls = []
     airdrop_discover = []
+    airdrop_ask = []
     boot_lines = []
     with open_without_reset(args.port, timeout=0.25) as connection:
         if args.reset:
@@ -590,6 +607,17 @@ def main() -> None:
                 ):
                     discover[key] = int(discover[key])
                 airdrop_discover.append(discover)
+            ask_match = AIRDROP_ASK.search(line)
+            if ask_match:
+                ask = ask_match.groupdict()
+                for key in (
+                    "attempted", "error", "status", "request_bytes",
+                    "response_bytes", "body_bytes", "bplist",
+                    "receiver_name", "ids_session", "receiver_pseudonym",
+                    "receiver_push_token", "chunked",
+                ):
+                    ask[key] = int(ask[key])
+                airdrop_ask.append(ask)
 
     unique_sources = sorted({item["source"] for item in frames})
     raw_captures = []
@@ -661,6 +689,7 @@ def main() -> None:
             "airdropTcp": airdrop_tcp,
             "airdropTls": airdrop_tls,
             "airdropDiscover": airdrop_discover,
+            "airdropAsk": airdrop_ask,
         },
         "bootLogPrefix": boot_lines,
     }

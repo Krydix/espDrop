@@ -52,9 +52,16 @@ It records protocol version, ciphersuite, verification flags, and bounded peer
 certificate metadata. A stock iPhone completed TLS 1.2 with
 `TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384` and returned a 1,390-byte certificate.
 The normal firmware contains neither the lab private key nor the active probe.
-The same lab path then sent OpenDrop's minimum empty binary-plist `/Discover`;
-the iPhone returned `HTTP 200` with a chunked response. This proves application
-request acceptance. The next live boundary is `/Ask`, not `/Upload`.
+The discovery lab path then sent OpenDrop's minimum empty binary-plist
+`/Discover`; the iPhone returned `HTTP 200` with a chunked response. The
+attended sender path separately opened a fresh TLS connection, making `/Ask`
+its first HTTP request as OpenDrop does. Its bounded one-file binary plist
+carried `hello.jpg`, `public.jpeg`, a UUID TransferID, and a files transfer
+type. The stock iPhone displayed its native AirDrop prompt and, after explicit
+acceptance, returned `HTTP 200` with a 359-byte chunked binary plist containing
+the receiver-name, IDS-session, pseudonym, and push-token keys. Evidence is in
+[`lab/2026-08-24-airdrop-ask.json`](lab/2026-08-24-airdrop-ask.json). The next
+live boundary is a bounded `/Upload`, not more `/Ask` experimentation.
 
 **REFERENCE (iOS 26 capture):** matching the TransferID between `/Ask` and
 `/Upload` was necessary for upload acceptance. The observed Apple-like upload
@@ -65,9 +72,9 @@ observed upper-case UUID, URL-safe pseudonym, and upper-case push-token shapes;
 builds the exact minimal `/Upload` header order without `Host` or
 `Accept-Encoding`; and builds bounded HTTP chunk and dvzip block headers. Unit
 tests pin the successful iOS 26 capture shape and the 128 KiB stored-block
-boundary. The missing live prerequisites are the `/Ask` binary plist, explicit
-user acceptance, ODC cpio streaming, and a transfer-scoped state machine that
-guarantees the accepted `TransferID` is reused.
+boundary. The remaining live prerequisites are ODC cpio streaming and a
+transfer-scoped state machine that guarantees the accepted `TransferID` is
+reused by `/Upload` on the accepted connection.
 
 **UNKNOWN:** whether the target iPhone requires dvzip for JPEG received from a
 non-Apple sender, accepts cpio, or negotiates this via metadata/flags.

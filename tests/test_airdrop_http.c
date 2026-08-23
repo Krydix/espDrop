@@ -60,6 +60,21 @@ int main(void)
     assert(parsed.binary_plist);
     assert(parsed.receiver_computer_name_key);
 
+    static const char ask_chunked[] =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "14\r\nbplist00IDSSessionID\r\n"
+        "12\r\nReceiverPseudonymR\r\n"
+        "10\r\neceiverPushToken\r\n"
+        "0\r\n\r\n";
+    assert(espdrop_airdrop_parse_ask_response(
+               (const uint8_t *)ask_chunked, sizeof(ask_chunked) - 1U,
+               false, &parsed) == ESPDROP_AIRDROP_HTTP_COMPLETE);
+    assert(parsed.status_code == 200U);
+    assert(parsed.binary_plist);
+    assert(parsed.ids_session_id_key);
+    assert(parsed.receiver_pseudonym_key);
+    assert(parsed.receiver_push_token_key);
+
     static const char invalid[] = "NOPE\r\nContent-Length: 0\r\n\r\n";
     assert(espdrop_airdrop_parse_discover_response(
                (const uint8_t *)invalid, sizeof(invalid) - 1U, true,

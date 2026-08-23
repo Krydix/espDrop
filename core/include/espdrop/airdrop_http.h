@@ -27,6 +27,9 @@ typedef struct {
     bool chunked;
     bool binary_plist;
     bool receiver_computer_name_key;
+    bool ids_session_id_key;
+    bool receiver_pseudonym_key;
+    bool receiver_push_token_key;
     char content_type[ESPDROP_AIRDROP_HTTP_CONTENT_TYPE_BYTES];
     char content_encoding[ESPDROP_AIRDROP_HTTP_CONTENT_ENCODING_BYTES];
 } espdrop_airdrop_http_result_t;
@@ -43,6 +46,12 @@ size_t espdrop_airdrop_build_discover_request(
  * Content-Length become complete as soon as that body is present. A response
  * without a length is complete only when end_of_stream is true. */
 espdrop_airdrop_http_parse_t espdrop_airdrop_parse_discover_response(
+    const uint8_t *response,
+    size_t length,
+    bool end_of_stream,
+    espdrop_airdrop_http_result_t *result);
+
+espdrop_airdrop_http_parse_t espdrop_airdrop_parse_ask_response(
     const uint8_t *response,
     size_t length,
     bool end_of_stream,

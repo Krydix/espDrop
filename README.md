@@ -22,9 +22,10 @@ cloud service.
 > ESP-IDF socket. It reconstructed a live receiver's exact IPv6 address and
 > advertised TCP port, completed TCP, and negotiated a certificate-bearing
 > TLS 1.2 transport using a lab-only self-signed client certificate. It then
-> sent a minimum binary-plist `POST /Discover`; the iPhone returned HTTP 200
-> with a chunked response. It does **not** yet issue `/Ask`, request user
-> acceptance, or transfer a file. See
+> sent a bounded binary-plist `POST /Ask` on a fresh sender connection. The
+> stock iPhone displayed its native AirDrop prompt; after explicit acceptance,
+> it returned HTTP 200 with a chunked binary-plist response. `/Upload` remains
+> disabled, so no file bytes have been transferred yet. See
 > [the unknowns ledger](docs/unknowns.md) for evidence-backed status.
 
 ## What exists now
@@ -41,6 +42,8 @@ cloud service.
   isolated behind an explicit bounded lab profile
 - a hardware-proven minimum AirDrop `/Discover` request accepted with HTTP
   200, plus bounded Content-Length/chunked response parsing
+- a hardware-proven one-file `/Ask` request that triggered the stock iPhone's
+  native prompt and received HTTP 200 after explicit acceptance
 - host-tested `/Upload` identity, exact iOS 26 header, HTTP chunk, and dvzip
   block framing builders; no upload is armed in firmware
 - verbatim preservation of a peer's modern 16-slot AWDL channel sequence

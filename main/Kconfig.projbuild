@@ -59,6 +59,18 @@ config ESPDROP_AIRDROP_TLS_LAB
         Everyone-mode behavior. Normal and web-flasher builds must leave this
         disabled.
 
+config ESPDROP_AIRDROP_ASK_LAB
+    bool "Issue one bounded AirDrop /Ask on a sender connection"
+    depends on ESPDROP_AIRDROP_TLS_LAB
+    default n
+    help
+        After DNS-SD discovery, open the sender TLS connection with one
+        synthetic hello.jpg transfer intent and record its bounded response.
+        This follows OpenDrop's send flow: /Ask is the first request on this
+        connection, rather than following /Discover. It can create an AirDrop
+        prompt on the receiver. It never sends /Upload. Enable only for an
+        attended lab run with explicit user consent.
+
 config ESPDROP_AWDL_LAB_TARGET_MAC
     string "AWDL lab endpoint MAC (empty permits auto-selection)"
     depends on ESPDROP_AWDL_TX_LAB

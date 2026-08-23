@@ -134,6 +134,17 @@ test:
 		-o "$(BUILD_DIR)/host-tests/test_awdl_data"
 	@"$(BUILD_DIR)/host-tests/test_awdl_data"
 	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
+		-D_GNU_SOURCE \
+		-I"$(ROOT_DIR)/core/include" \
+		"$(ROOT_DIR)/core/src/airdrop_ask.c" \
+		"$(ROOT_DIR)/core/src/airdrop_upload.c" \
+		"$(ROOT_DIR)/tests/test_airdrop_ask.c" \
+		-o "$(BUILD_DIR)/host-tests/test_airdrop_ask"
+	@"$(BUILD_DIR)/host-tests/test_airdrop_ask" \
+		"$(BUILD_DIR)/host-tests/ask.plist"
+	@python3 "$(ROOT_DIR)/tests/test_airdrop_ask_plist.py" \
+		"$(BUILD_DIR)/host-tests/ask.plist"
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
 		-I"$(ROOT_DIR)/core/include" \
 		"$(ROOT_DIR)/core/src/airdrop_http.c" \
 		"$(ROOT_DIR)/tests/test_airdrop_http.c" \

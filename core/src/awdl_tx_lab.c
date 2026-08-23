@@ -24,7 +24,10 @@
 #include "esp_private/wifi.h"
 #endif
 
-#if CONFIG_ESPDROP_AIRDROP_TLS_LAB
+#if CONFIG_ESPDROP_AIRDROP_ASK_LAB
+#define AWDL_TX_LAB_WINDOW_MS 60000U
+#define AWDL_TX_LAB_PROBE_LIMIT 58U
+#elif CONFIG_ESPDROP_AIRDROP_TLS_LAB
 #define AWDL_TX_LAB_WINDOW_MS 25000U
 #define AWDL_TX_LAB_PROBE_LIMIT 24U
 #else
@@ -386,7 +389,9 @@ static void lab_tx_task(void *argument)
              "airdrop_tcp_connected=%lu airdrop_tls_attempts=%lu "
              "airdrop_tls_connected=%lu airdrop_discover_attempts=%lu "
              "airdrop_discover_responses=%lu "
-             "airdrop_discover_accepted=%lu peer_mappings=%lu "
+             "airdrop_discover_accepted=%lu airdrop_ask_attempts=%lu "
+             "airdrop_ask_responses=%lu airdrop_ask_accepted=%lu "
+             "peer_mappings=%lu "
              "peer_mapping_failures=%lu tcp_tx_segments=%lu "
              "tcp_tx_syn=%lu tcp_tx_radio_success=%lu "
              "tcp_tx_radio_failed=%lu tcp_rx_segments=%lu "
@@ -425,6 +430,9 @@ static void lab_tx_task(void *argument)
              (unsigned long)netif.airdrop_discover_attempts,
              (unsigned long)netif.airdrop_discover_responses,
              (unsigned long)netif.airdrop_discover_accepted,
+             (unsigned long)netif.airdrop_ask_attempts,
+             (unsigned long)netif.airdrop_ask_responses,
+             (unsigned long)netif.airdrop_ask_accepted,
              (unsigned long)netif.peer_mappings,
              (unsigned long)netif.peer_mapping_failures,
              (unsigned long)netif.tcp_tx_segments,
