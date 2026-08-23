@@ -63,7 +63,9 @@ TX_FRAME = re.compile(
 TX_WINDOW = re.compile(
     r"TX-LAB-WINDOW number=(?P<number>\d+) "
     r"scheduled=(?P<scheduled>\d+) actual=(?P<actual>\d+) "
-    r"lateness_us=(?P<lateness_us>\d+)",
+    r"lateness_us=(?P<lateness_us>\d+)"
+    r"(?: copresence=(?P<copresence>\d+) "
+    r"target=(?P<target>[0-9a-f:]+))?",
     re.IGNORECASE,
 )
 
@@ -377,10 +379,18 @@ def main() -> None:
                 tx_frames.append(record)
             tx_window_match = TX_WINDOW.search(line)
             if tx_window_match:
-                tx_windows.append({
-                    key: int(value)
-                    for key, value in tx_window_match.groupdict().items()
-                })
+                window = tx_window_match.groupdict()
+                for key in (
+                    "number", "scheduled", "actual", "lateness_us",
+                    "copresence",
+                ):
+                    if window[key] is not None:
+                        window[key] = int(window[key])
+                    else:
+                        window.pop(key)
+                if window["target"] is None:
+                    window.pop("target")
+                tx_windows.append(window)
             tx_summary_match = TX_SUMMARY.search(line)
             if tx_summary_match:
                 tx_summary = {

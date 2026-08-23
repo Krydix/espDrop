@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "phase-aware channel copresence for a same-boot distance-one AirDrop target",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "channel": 6,
+    "transmitWindowSeconds": 15,
+    "probeLimit": 14,
+    "normalBuildTransmitEnabled": false
+  },
+  "research": {
+    "reference": "OWL src/schedule.c",
+    "referenceCommit": "da255a70f221784c836d943dd3f243bc798f223b",
+    "finding": "Unicast eligibility must phase-correct and intersect the synchronization schedule with the selected target's own advertised channel sequence. Following only the elected synchronization parent's schedule is insufficient as a general unicast gate."
+  },
+  "software": {
+    "phaseAwareCommonChannelScheduler": true,
+    "independentTargetSynchronizationState": true,
+    "autoTargetObservationIndependentOfElectionCandidate": true,
+    "oneProbeBurstPerCommonWindow": true,
+    "dedicatedDistanceOneLabProfile": true,
+    "admissionRequiredBeforeMdns": true,
+    "hostTestsPassed": true,
+    "passiveFirmwareBuildPassed": true,
+    "boundedLabBuildPassed": true
+  },
+  "hardwareExperiments": [
+    {
+      "name": "phase-aware-airdrop-target",
+      "targetMac": "1e:25:d2:3e:bb:2b",
+      "targetAdvertisedAirdropTcpInImmediatelyPrecedingSameSessionCapture": true,
+      "recordedCopresenceWindows": 11,
+      "allRecordedWindowsMarkedCopresent": true,
+      "recordedWindowLatenessUs": {
+        "minimum": 2,
+        "maximum": 130
+      },
+      "actionRadioSuccess": 14,
+      "actionRadioFailed": 0,
+      "neighborSolicitationRadioSuccess": 14,
+      "echoRequestRadioSuccess": 14,
+      "dataRadioFailed": 0,
+      "directedReactions": 0,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false,
+      "mdnsQueries": 0,
+      "completeEndpoints": 0,
+      "qualification": "The capture exposed repeated use of one overlap interval. The implementation was subsequently corrected and host-regressed to select only a future guarded interval."
+    },
+    {
+      "name": "post-correction-no-airdrop-control",
+      "durationSeconds": 45,
+      "airdropTcpCandidateSeen": false,
+      "asquicCandidateSeen": true,
+      "targetSelected": false,
+      "scheduledWindows": 0,
+      "transmitTaskStarted": false,
+      "result": "fully passive"
+    }
+  ],
+  "result": {
+    "confirmed": "The ESP can derive and execute guarded channel-6 intervals in which both its current synchronization schedule and the selected distance-one AirDrop target's advertised schedule report channel 6. Every transmitted MIF, Neighbor Solicitation, and Echo Request completed successfully at the radio. A post-correction control remained passive when no AirDrop target was present.",
+    "notConfirmed": "The selected distance-one peer returned no directed response, so target copresence was not sufficient for admission. The one-burst-per-window correction has host coverage but did not encounter an AirDrop target in its post-correction hardware control.",
+    "nextFocus": "Compare espDrop's minimal transmitted MIF and peer-admission state with current Apple MIFs while preserving the phase-aware target gate."
+  }
+}

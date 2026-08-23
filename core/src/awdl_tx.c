@@ -1,3 +1,15 @@
+/*
+ * espDrop AWDL transmit scheduling and frame construction
+ *
+ * The phase-aware common-channel gate is adapted from OWL src/schedule.c at
+ * commit da255a70f221784c836d943dd3f243bc798f223b.
+ * Copyright (C) 2018 The Open Wireless Link Project
+ * Copyright (C) 2018 Milan Stute
+ * Copyright (C) 2026 Krydix and espDrop contributors
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 #include "espdrop/awdl_tx.h"
 
 #include <string.h>
@@ -220,6 +232,112 @@ bool espdrop_awdl_next_channel_window_us(
             *scheduled_us = candidate;
             return true;
         }
+    }
+    return false;
+}
+
+typedef struct {
+    uint64_t start_us;
+    uint64_t end_us;
+    uint8_t channel;
+} awdl_channel_window_t;
+
+static bool channel_window_at(
+    const espdrop_awdl_tx_state_t *state,
+    uint64_t at_us,
+    awdl_channel_window_t *window)
+{
+    if (!state_is_valid(state) || window == NULL ||
+        at_us < state->sync_reference_us) {
+        return false;
+    }
+    const uint64_t eaw_us = (uint64_t)state->aw_period_tu *
+                            state->presence_mode * AWDL_TU_US;
+    if (eaw_us == 0U) {
+        return false;
+    }
+    const uint64_t elapsed_eaws =
+        (at_us - state->sync_reference_us) / eaw_us;
+    if (elapsed_eaws >
+        (UINT64_MAX - state->sync_reference_us) / eaw_us) {
+        return false;
+    }
+    window->start_us = state->sync_reference_us + elapsed_eaws * eaw_us;
+    if (window->start_us > UINT64_MAX - eaw_us) {
+        return false;
+    }
+    window->end_us = window->start_us + eaw_us;
+    const uint64_t sequence_base =
+        state->aw_sequence_base / state->presence_mode;
+    const size_t index = (size_t)(
+        (sequence_base + elapsed_eaws) % state->peer_channel_count);
+    window->channel = state->peer_channels[index];
+    return true;
+}
+
+bool espdrop_awdl_next_common_channel_window_us(
+    const espdrop_awdl_tx_state_t *local,
+    const espdrop_awdl_tx_state_t *peer,
+    uint8_t channel,
+    uint64_t now_us,
+    uint32_t guard_us,
+    uint64_t *scheduled_us)
+{
+    if (!state_is_valid(local) || !state_is_valid(peer) ||
+        scheduled_us == NULL || channel == 0U ||
+        now_us < local->sync_reference_us ||
+        now_us < peer->sync_reference_us) {
+        return false;
+    }
+
+    const uint64_t local_eaw_us = (uint64_t)local->aw_period_tu *
+                                  local->presence_mode * AWDL_TU_US;
+    const uint64_t peer_eaw_us = (uint64_t)peer->aw_period_tu *
+                                 peer->presence_mode * AWDL_TU_US;
+    if (local_eaw_us != peer_eaw_us ||
+        (uint64_t)guard_us * 2U >= local_eaw_us ||
+        (uint64_t)guard_us * 2U >= peer_eaw_us) {
+        return false;
+    }
+
+    /* Each sequence repeats after at most 16 EAWs. Walking both sets of
+     * boundaries for two complete sequences covers every relative slot/phase
+     * combination without an unbounded search. */
+    const size_t boundary_limit =
+        2U * (local->peer_channel_count + peer->peer_channel_count) + 2U;
+    uint64_t cursor_us = now_us;
+    for (size_t boundary = 0U; boundary < boundary_limit; ++boundary) {
+        awdl_channel_window_t local_window;
+        awdl_channel_window_t peer_window;
+        if (!channel_window_at(local, cursor_us, &local_window) ||
+            !channel_window_at(peer, cursor_us, &peer_window)) {
+            return false;
+        }
+
+        uint64_t safe_start_us = local_window.start_us + guard_us;
+        const uint64_t peer_safe_start = peer_window.start_us + guard_us;
+        if (safe_start_us < peer_safe_start) {
+            safe_start_us = peer_safe_start;
+        }
+        const uint64_t local_safe_end = local_window.end_us - guard_us;
+        const uint64_t peer_safe_end = peer_window.end_us - guard_us;
+        const uint64_t safe_end_us = local_safe_end < peer_safe_end
+                                         ? local_safe_end : peer_safe_end;
+        if (local_window.channel == channel &&
+            peer_window.channel == channel &&
+            safe_start_us >= now_us &&
+            safe_start_us <= safe_end_us) {
+            *scheduled_us = safe_start_us;
+            return true;
+        }
+
+        const uint64_t next_boundary_us =
+            local_window.end_us < peer_window.end_us
+                ? local_window.end_us : peer_window.end_us;
+        if (next_boundary_us <= cursor_us) {
+            return false;
+        }
+        cursor_us = next_boundary_us;
     }
     return false;
 }

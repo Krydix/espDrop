@@ -87,10 +87,18 @@ These hashes are research provenance, not dependencies in release firmware.
   A later same-boot selector eliminated the rebuild/ephemeral-MAC race and
   locked a protocol-confirmed distance-one `_airdrop._tcp` receiver. Its
   14/14 action, 14/14 NS, and 14/14 Echo radio completions again produced zero
-  directed replies. Distance-one admission therefore remains open, and the
-  missing behavior is likely elsewhere in peer admission, the still-minimal
-  advertised MIF, or the S3's inability to follow 5 GHz windows. Evidence is
-  in [`lab/2026-08-23-awdl-auto-target.json`](lab/2026-08-23-awdl-auto-target.json).
+  directed replies. A phase-aware follow-up then intersected the elected
+  synchronization schedule with that target's independently derived schedule;
+  all 11 retained windows were marked copresent and all 42 probe frames again
+  radio-completed without a directed reply. Target copresence is therefore not
+  sufficient for distance-one admission. The final one-burst-per-window fix is
+  host-tested; its hardware control saw no AirDrop receiver and correctly
+  remained passive. The missing behavior is now more likely elsewhere in peer
+  admission, the still-minimal advertised MIF, or the S3's inability to follow
+  5 GHz windows. Evidence is in
+  [`lab/2026-08-23-awdl-auto-target.json`](lab/2026-08-23-awdl-auto-target.json)
+  and
+  [`lab/2026-08-23-awdl-peer-copresence.json`](lab/2026-08-23-awdl-peer-copresence.json).
 - [ ] Record loss, schedule drift, heap high-water mark, and watchdog status.
 
 ## M2/M3 — AirDrop
@@ -131,9 +139,10 @@ These hashes are research provenance, not dependencies in release firmware.
   Evidence is in
   [`lab/2026-08-23-airdrop-endpoint-resolution.json`](lab/2026-08-23-airdrop-endpoint-resolution.json).
   Same-boot protocol-driven target selection now removes the rebuild race,
-  but its first distance-one hardware target still failed admission and sent
-  zero mDNS queries; endpoint reconstruction therefore remains unproven on
-  the retained hardware path.
+  and phase-aware target copresence removes schedule mismatch as the sole
+  explanation for the retained distance-one result. The target still failed
+  admission and sent zero mDNS queries; endpoint reconstruction therefore
+  remains unproven on the retained hardware path.
 - [ ] Establish TCP to the discovered AirDrop endpoint. A scoped TCP attempt
   to the confirmed Mac address/port was emitted during the bounded lab but
   ended with `EHOSTUNREACH`; no AWDL neighbor admission occurred in that run.

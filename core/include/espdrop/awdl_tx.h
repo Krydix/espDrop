@@ -69,6 +69,14 @@ bool espdrop_awdl_next_channel_window_us(
     uint32_t guard_us,
     uint64_t *scheduled_us);
 
+bool espdrop_awdl_next_common_channel_window_us(
+    const espdrop_awdl_tx_state_t *local,
+    const espdrop_awdl_tx_state_t *peer,
+    uint8_t channel,
+    uint64_t now_us,
+    uint32_t guard_us,
+    uint64_t *scheduled_us);
+
 espdrop_awdl_build_result_t espdrop_awdl_build_action(
     uint8_t *frame,
     size_t capacity,

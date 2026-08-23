@@ -78,6 +78,44 @@ int main(void)
     assert(scheduled_us == state.sync_reference_us +
                                16ULL * 16ULL * 4ULL * 1024ULL + 3000ULL);
 
+    const uint64_t eaw_us = 16ULL * 4ULL * 1024ULL;
+    espdrop_awdl_tx_state_t phase_local = state;
+    phase_local.aw_sequence_base = 0U;
+    memset(phase_local.peer_channels, 0,
+           sizeof(phase_local.peer_channels));
+    phase_local.peer_channels[8] = 6U;
+    espdrop_awdl_tx_state_t phase_peer = phase_local;
+    memset(phase_peer.peer_channels, 0,
+           sizeof(phase_peer.peer_channels));
+    phase_peer.peer_channels[9] = 6U;
+    phase_peer.sync_reference_us = phase_local.sync_reference_us - eaw_us;
+    assert(espdrop_awdl_next_common_channel_window_us(
+        &phase_local, &phase_peer, 6U,
+        phase_local.sync_reference_us + 7ULL * eaw_us, 3000U,
+        &scheduled_us));
+    assert(scheduled_us ==
+           phase_local.sync_reference_us + 8ULL * eaw_us + 3000ULL);
+    assert(espdrop_awdl_next_common_channel_window_us(
+        &phase_local, &phase_peer, 6U, scheduled_us + 1U, 3000U,
+        &scheduled_us));
+    assert(scheduled_us ==
+           phase_local.sync_reference_us + 24ULL * eaw_us + 3000ULL);
+
+    phase_peer.sync_reference_us = phase_local.sync_reference_us;
+    assert(!espdrop_awdl_next_common_channel_window_us(
+        &phase_local, &phase_peer, 6U,
+        phase_local.sync_reference_us + 7ULL * eaw_us, 3000U,
+        &scheduled_us));
+    assert(!espdrop_awdl_next_common_channel_window_us(
+        &phase_local, &phase_peer, 6U,
+        phase_local.sync_reference_us + 7ULL * eaw_us, 33000U,
+        &scheduled_us));
+    phase_peer.presence_mode = 2U;
+    assert(!espdrop_awdl_next_common_channel_window_us(
+        &phase_local, &phase_peer, 6U,
+        phase_local.sync_reference_us + 7ULL * eaw_us, 3000U,
+        &scheduled_us));
+
     uint8_t frame[ESPDROP_AWDL_TX_FRAME_CAPACITY];
     size_t length = 0;
     assert(espdrop_awdl_build_action(

@@ -296,6 +296,45 @@ Same-boot selection removes the stale-identity race. It does not solve the
 remaining distance-one admission boundary; richer current MIF/admission state
 or the S3's single-band channel limitation remains the next research focus.
 
+## Phase-aware target copresence
+
+OWL's unicast schedule check does not rely only on the elected synchronization
+parent. It phase-corrects both peers' schedules and requires the sender and
+destination to advertise the requested channel at the same time. espDrop now
+applies that rule before every targeted lab probe. The implementation walks a
+bounded set of schedule boundaries, applies a guard at both ends of the
+intersection, and emits at most one probe burst for a selected guarded
+interval. The algorithm is adapted from OWL `src/schedule.c` at commit
+`da255a70f221784c836d943dd3f243bc798f223b` under the project's compatible
+GPL-3.0-or-later license.
+
+The selected target's timing state is derived from its own live MIF and retained
+separately from the synchronization/election state used to construct outbound
+MIFs. AirDrop target observation is also independent of whether that particular
+MIF can immediately supply the current election candidate; transmission still
+requires both valid states. A separate
+`sdkconfig.awdl-distance-one-lab.defaults` profile makes this deliberately
+broader experiment explicit, while the existing generic lab defaults retain
+their distance-zero target qualifier.
+
+**CONFIRMED IN A BOUNDED HARDWARE RUN on 2026-08-23:** espDrop selected peer
+`1e:25:d2:3e:bb:2b`, which had advertised `_airdrop._tcp` in the immediately
+preceding same-session capture. Eleven retained window records all report
+target copresence, with 2–130 microseconds scheduling lateness; the summary
+confirms 14/14 MIF, 14/14 Neighbor Solicitation, and 14/14 Echo radio
+completions. The peer returned no directed response, admission remained closed,
+and zero mDNS queries were submitted. The run therefore proves execution of
+the target-specific gate but rejects target copresence alone as the missing
+distance-one admission primitive.
+
+That capture also exposed repeated use of one live overlap interval. The
+scheduler was corrected to select only a future guarded interval and covered
+with an aligned-phase host regression. A 45-second post-correction hardware
+control saw `_asquic` but no `_airdrop._tcp` target and remained fully passive,
+so the correction still needs a live-AirDrop hardware repeat. Compact evidence
+is preserved in
+[`lab/2026-08-23-awdl-peer-copresence.json`](lab/2026-08-23-awdl-peer-copresence.json).
+
 ## Timing model
 
 **CONFIRMED by the OWL research:** AWDL divides time into availability windows

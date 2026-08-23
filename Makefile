@@ -12,6 +12,8 @@ OTA_PORT ?= 0
 WEB_INSTALLER_DIR ?= $(ROOT_DIR)/build/web-installer
 LAB_BUILD_DIR ?= $(ROOT_DIR)/build/$(TARGET)-awdl-tx-lab
 LAB_SDKCONFIG ?= $(LAB_BUILD_DIR)/sdkconfig
+DISTANCE_ONE_LAB_BUILD_DIR ?= $(ROOT_DIR)/build/$(TARGET)-awdl-distance-one-lab
+DISTANCE_ONE_LAB_SDKCONFIG ?= $(DISTANCE_ONE_LAB_BUILD_DIR)/sdkconfig
 
 .DEFAULT_GOAL := help
 
@@ -25,7 +27,7 @@ define run_idf
 			-D SDKCONFIG="$(SDKCONFIG)" $(1)'
 endef
 
-.PHONY: help build reconfigure clean fullclean flash monitor flash-monitor ports size test test-hardware-awdl web-installer provision-wifi ota-trigger ota-local lab-awdl-tx-build lab-awdl-tx-flash lab-awdl-tx-test
+.PHONY: help build reconfigure clean fullclean flash monitor flash-monitor ports size test test-hardware-awdl web-installer provision-wifi ota-trigger ota-local lab-awdl-tx-build lab-awdl-tx-flash lab-awdl-tx-test lab-awdl-distance-one-build lab-awdl-distance-one-flash lab-awdl-distance-one-test
 
 help:
 	@printf '%s\n' \
@@ -39,6 +41,7 @@ help:
 		'  make test-hardware-awdl PORT=... [DURATION=30]' \
 		'  make lab-awdl-tx-flash PORT=...  Flash bounded 15 s TX experiment' \
 		'  make lab-awdl-tx-test PORT=...   Flash and capture TX experiment' \
+		'  make lab-awdl-distance-one-test PORT=...  Test a live AirDrop peer in common windows' \
 		'  make web-installer         Stage the GitHub Pages web flasher' \
 		'  make provision-wifi PORT=...  Securely provision OTA Wi-Fi over USB' \
 		'  make ota-trigger PORT=...     Ask firmware to install GitHub Pages build' \
@@ -193,6 +196,31 @@ lab-awdl-tx-test: lab-awdl-tx-flash
 		--port "$(PORT)" \
 		--seconds "$(DURATION)" \
 		--output "$(LAB_BUILD_DIR)/hardware/awdl-tx-lab.json"
+
+lab-awdl-distance-one-build:
+	@bash -lc 'set -eo pipefail; \
+		test -f "$(IDF_PATH)/export.sh"; \
+		if [ -n "$(IDF_PYTHON_ENV_PATH)" ]; then export IDF_PYTHON_ENV_PATH="$(IDF_PYTHON_ENV_PATH)"; fi; \
+		. "$(IDF_PATH)/export.sh" >/dev/null 2>&1; \
+		cd "$(ROOT_DIR)"; \
+		IDF_TARGET="$(TARGET)" idf.py -B "$(DISTANCE_ONE_LAB_BUILD_DIR)" \
+			-D SDKCONFIG="$(DISTANCE_ONE_LAB_SDKCONFIG)" \
+			-D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.awdl-distance-one-lab.defaults" build'
+
+lab-awdl-distance-one-flash: lab-awdl-distance-one-build
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@bash -lc 'set -eo pipefail; \
+		if [ -n "$(IDF_PYTHON_ENV_PATH)" ]; then export IDF_PYTHON_ENV_PATH="$(IDF_PYTHON_ENV_PATH)"; fi; \
+		. "$(IDF_PATH)/export.sh" >/dev/null 2>&1; \
+		cd "$(ROOT_DIR)"; \
+		IDF_TARGET="$(TARGET)" idf.py -B "$(DISTANCE_ONE_LAB_BUILD_DIR)" \
+			-D SDKCONFIG="$(DISTANCE_ONE_LAB_SDKCONFIG)" -p "$(PORT)" flash'
+
+lab-awdl-distance-one-test: lab-awdl-distance-one-flash
+	@python3 "$(ROOT_DIR)/scripts/capture_awdl_probe.py" \
+		--port "$(PORT)" \
+		--seconds "$(DURATION)" \
+		--output "$(DISTANCE_ONE_LAB_BUILD_DIR)/hardware/awdl-distance-one.json"
 
 web-installer: build
 	@python3 "$(ROOT_DIR)/scripts/stage_web_installer.py" \

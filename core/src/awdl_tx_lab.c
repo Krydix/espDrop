@@ -47,6 +47,7 @@
 static const char *TAG = "awdl_tx_lab";
 static SemaphoreHandle_t state_lock;
 static espdrop_awdl_tx_state_t tx_state;
+static espdrop_awdl_tx_state_t target_state;
 static espdrop_awdl_election_t election;
 typedef struct {
     bool valid;
@@ -63,6 +64,7 @@ static uint8_t schedule_mac[6];
 static bool has_schedule_mac;
 static char device_name[ESPDROP_AWDL_TX_NAME_BYTES];
 static bool has_state;
+static bool has_target_state;
 static bool task_started;
 static volatile bool admitted;
 static volatile bool netif_ready;
@@ -342,15 +344,28 @@ static void lab_tx_task(void *argument)
     while ((uint64_t)esp_timer_get_time() < deadline_us &&
            windows < AWDL_TX_LAB_PROBE_LIMIT) {
         espdrop_awdl_tx_state_t snapshot;
+        espdrop_awdl_tx_state_t target_snapshot;
+        bool require_target_copresence = false;
+        uint8_t selected_target[6] = {0};
         xSemaphoreTake(state_lock, portMAX_DELAY);
         snapshot = tx_state;
+        if (has_target_mac && has_target_state) {
+            target_snapshot = target_state;
+            memcpy(selected_target, target_mac, sizeof(selected_target));
+            require_target_copresence = true;
+        }
         xSemaphoreGive(state_lock);
 
         uint64_t scheduled_us = 0U;
         const uint64_t before_wait_us = (uint64_t)esp_timer_get_time();
-        if (!espdrop_awdl_next_channel_window_us(
-                &snapshot, 6U, before_wait_us,
-                AWDL_TX_LAB_CHANNEL_WINDOW_GUARD_US, &scheduled_us)) {
+        const bool scheduled = require_target_copresence
+            ? espdrop_awdl_next_common_channel_window_us(
+                  &snapshot, &target_snapshot, 6U, before_wait_us,
+                  AWDL_TX_LAB_CHANNEL_WINDOW_GUARD_US, &scheduled_us)
+            : espdrop_awdl_next_channel_window_us(
+                  &snapshot, 6U, before_wait_us,
+                  AWDL_TX_LAB_CHANNEL_WINDOW_GUARD_US, &scheduled_us);
+        if (!scheduled) {
             ESP_LOGE(TAG, "TX-LAB-SCHEDULE unavailable");
             ++errors;
             break;
@@ -362,9 +377,14 @@ static void lab_tx_task(void *argument)
         const uint64_t actual_us = (uint64_t)esp_timer_get_time();
         ESP_LOGI(TAG,
                  "TX-LAB-WINDOW number=%lu scheduled=%llu actual=%llu "
-                 "lateness_us=%llu",
+                 "lateness_us=%llu copresence=%u target="
+                 "%02x:%02x:%02x:%02x:%02x:%02x",
                  (unsigned long)(windows + 1U), scheduled_us,
-                 actual_us, actual_us - scheduled_us);
+                 actual_us, actual_us - scheduled_us,
+                 require_target_copresence ? 1U : 0U,
+                 selected_target[0], selected_target[1],
+                 selected_target[2], selected_target[3],
+                 selected_target[4], selected_target[5]);
         ++windows;
 
         uint8_t frame[ESPDROP_AWDL_TX_FRAME_CAPACITY];
@@ -405,9 +425,9 @@ static void lab_tx_task(void *argument)
         }
 
         if (!admitted) {
-            /* Synchronization and endpoint identity are independent. Follow
-             * the distance-zero anchor's windows, but address admission
-             * probes to the requested AirDrop endpoint. */
+            /* Synchronization and endpoint identity are independent. The
+             * scheduler has already intersected the advertised local and
+             * target sequences; address admission probes to that target. */
             const uint8_t *probe_target = has_target_mac
                                               ? target_mac
                                               : snapshot.sync_master;
@@ -637,32 +657,34 @@ void espdrop_awdl_tx_lab_observe_mif(
 #endif
 #endif
     espdrop_awdl_tx_state_t candidate;
+    espdrop_awdl_tx_state_t observed_peer;
+    const bool has_observed_peer = espdrop_awdl_tx_state_from_mif(
+        &observed_peer, station_mac, action->source, device_name,
+        action->phy_tx, mif, received_at_us);
 #if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
-    if (!dynamic_election_candidate(action, mif, received_at_us,
-                                    &candidate)) {
-        return;
-    }
+    const bool has_candidate = dynamic_election_candidate(
+        action, mif, received_at_us, &candidate);
 #else
-    if (!espdrop_awdl_tx_state_from_mif(
-            &candidate, station_mac, action->source, device_name,
-            action->phy_tx, mif,
-            received_at_us)) {
-        return;
-    }
+    const bool has_candidate = espdrop_awdl_tx_state_from_mif(
+        &candidate, station_mac, action->source, device_name,
+        action->phy_tx, mif, received_at_us);
 #endif
 
     bool start_task = false;
     bool auto_targeted = false;
     xSemaphoreTake(state_lock, portMAX_DELAY);
 #if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
-    tx_state = candidate;
-    has_state = true;
+    if (has_candidate) {
+        tx_state = candidate;
+        has_state = true;
+    }
 #else
-    if (!has_state || candidate.distance_to_master <
-                          tx_state.distance_to_master ||
-        (candidate.distance_to_master == tx_state.distance_to_master &&
-         memcmp(candidate.sync_master, tx_state.sync_master,
-                sizeof(candidate.sync_master)) == 0)) {
+    if (has_candidate &&
+        (!has_state || candidate.distance_to_master <
+                           tx_state.distance_to_master ||
+         (candidate.distance_to_master == tx_state.distance_to_master &&
+          memcmp(candidate.sync_master, tx_state.sync_master,
+                 sizeof(candidate.sync_master)) == 0))) {
         tx_state = candidate;
         has_state = true;
     }
@@ -678,11 +700,17 @@ void espdrop_awdl_tx_lab_observe_mif(
         has_target_mac = true;
         auto_targeted = true;
     }
+    if (has_target_mac && has_observed_peer &&
+        memcmp(action->source, target_mac, sizeof(target_mac)) == 0) {
+        target_state = observed_peer;
+        has_target_state = true;
+    }
     const bool target_is_live =
         !has_target_mac ||
         memcmp(action->source, target_mac, sizeof(target_mac)) == 0;
-    if (!task_started && target_is_live &&
-        (!CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP || has_target_mac)) {
+    if (!task_started && has_state && target_is_live &&
+        (!CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP || has_target_mac) &&
+        (!has_target_mac || has_target_state)) {
         task_started = true;
         start_task = true;
 #if CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
@@ -705,6 +733,14 @@ void espdrop_awdl_tx_lab_observe_mif(
                  action->source[3], action->source[4], action->source[5],
                  (unsigned long)(mif->has_election_v2
                      ? mif->election_v2.distance_to_master : UINT32_MAX));
+        if (!has_observed_peer) {
+            ESP_LOGW(TAG,
+                     "TX-LAB-TARGET-WAIT peer="
+                     "%02x:%02x:%02x:%02x:%02x:%02x "
+                     "reason=incomplete-synchronization-state",
+                     action->source[0], action->source[1], action->source[2],
+                     action->source[3], action->source[4], action->source[5]);
+        }
     }
 
     if (start_task && xTaskCreate(lab_tx_task, "awdl_tx_lab", 5120, NULL,
