@@ -232,15 +232,17 @@ callback.
 
 ## Licensing boundary
 
-OWL and OpenDrop are GPL-3.0. The esp-owl repository has mixed per-file notices
-but no repository-level license at the pinned head. The MIT core therefore
-defines an AWDL backend interface but does not copy that source into release
-firmware. Options are:
+espDrop is licensed under `GPL-3.0-or-later`, matching the “version 3 or any
+later version” notices in the inspected OWL and OpenDrop source. That makes it
+possible to adapt their GPL implementation work while keeping attribution,
+copyright notices, modification history, and corresponding source intact.
+Compatibility is not permission to erase provenance: every adapted file must
+identify its upstream project and retain the upstream notice.
 
-1. obtain a clear license for esp-owl changes;
-2. keep a separately distributed GPL backend with complete notices; or
-3. implement the ESP adapter independently from the papers and measured
-   packet fixtures.
+The esp-owl repository has mixed per-file notices but no repository-level
+license at the pinned head. Code from it must therefore be reviewed file by
+file before reuse. A file without a clear compatible grant remains research
+input only. See [licensing and contribution policy](licensing.md).
 
 ## References
 

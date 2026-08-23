@@ -163,6 +163,7 @@ bidirectional IPv6 over AWDL.
 - [Receive flow](docs/receive-flow.md)
 - [OTA maintenance design](docs/ota.md)
 - [Unknowns and milestone evidence](docs/unknowns.md)
+- [Licensing and contribution policy](docs/licensing.md)
 
 The public implementation baseline is Apple’s security documentation and the
 Open Wireless Link research. OpenDrop, OWL, esp-owl, and the current iOS 26
@@ -181,7 +182,9 @@ interoperability work are pinned as research inputs in the ledger.
 
 ## License
 
-The original espDrop scaffold and components are MIT licensed. GPL and
-mixed-license research implementations are not copied into the release
-firmware; see [NOTICE](NOTICE) and the licensing boundary in
-[AWDL research](docs/awdl.md#licensing-boundary).
+espDrop is free software licensed under the
+[GNU General Public License, version 3 or later](LICENSE)
+(`GPL-3.0-or-later`). Commercial use is allowed. Distributors must provide
+recipients the corresponding source and the same freedoms required by the
+GPL. See [licensing and contribution policy](docs/licensing.md) and
+[NOTICE](NOTICE) for provenance and the status of earlier MIT snapshots.

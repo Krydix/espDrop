@@ -1,11 +1,19 @@
 espDrop
 
+Copyright (c) 2026 Krydix and espDrop contributors
+
+This version of espDrop is licensed under the GNU General Public License,
+version 3 or (at your option) any later version. See LICENSE. Versions through
+commit 352f924 were published under the MIT License; existing grants for those
+versions remain valid.
+
 The initial architecture and build/provisioning workflow are based on the
 project conventions used by Krydix/ESPresso.
 
 The protocol documentation is informed by public research from the Open
-Wireless Link project and by inspection of the GPL-3.0 OpenDrop and OWL source
-trees. No GPL implementation code is included in the MIT-licensed components.
+Wireless Link project and by inspection of the GPL-3.0-or-later OpenDrop and
+OWL source trees. Any future source adapted from those projects must retain
+its upstream copyright and license notices and identify its provenance.
 
 archef2000/esp-owl is an important experimental ESP32-S3 reference. Its tree
 does not currently contain a repository-level license, although individual

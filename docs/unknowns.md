@@ -11,8 +11,8 @@ and a reproducible test procedure.
 | Project | Commit inspected | Status |
 | --- | --- | --- |
 | archef2000/esp-owl | `653deac69fceecc441129cbfa89d141d236d019f` | ESP32-S3 reference; no repository-level license found |
-| seemoo-lab/owl | `da255a70f221784c836d943dd3f243bc798f223b` | GPL-3.0 AWDL reference |
-| seemoo-lab/opendrop | `11fe7ba7861093b302bc0637e8cb10adf2d29337` | GPL-3.0 AirDrop reference |
+| seemoo-lab/owl | `da255a70f221784c836d943dd3f243bc798f223b` | GPL-3.0-or-later in inspected source notices; AWDL reference |
+| seemoo-lab/opendrop | `11fe7ba7861093b302bc0637e8cb10adf2d29337` | GPL-3.0-or-later in inspected source notices; AirDrop reference |
 | jedbillyb/airdrop-mt7921 | `d7c86192e3b79c520fde5965ddc24a1ad8cd1066` | GPL-3.0 current iOS 26 observations/patches |
 
 These hashes are research provenance, not dependencies in release firmware.
