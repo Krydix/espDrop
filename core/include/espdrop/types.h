@@ -69,6 +69,8 @@ typedef struct {
     uint64_t airdrop_seen_ms;
     uint8_t awdl_mac[6];
     uint8_t ipv6[ESPDROP_IPV6_BYTES];
+    uint16_t airdrop_port;
+    bool airdrop_endpoint_complete;
     espdrop_awdl_peer_state_t awdl;
     char service_id[ESPDROP_SERVICE_ID_MAX_BYTES];
     char display_name[ESPDROP_PEER_NAME_MAX_BYTES];

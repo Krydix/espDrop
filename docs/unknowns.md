@@ -95,6 +95,11 @@ These hashes are research provenance, not dependencies in release firmware.
   decoder. A real ESP socket also decoded Apple PTR traffic into the live
   instance `9df4fc4f18c2._airdrop._tcp.local` without crashing after moving
   parser scratch storage out of the mDNS task stack.
+- [x] Model a complete DNS-SD endpoint on the ephemeral AWDL peer. A complete
+  tuple is now matched by advertised IPv6 address, stores the service instance
+  and advertised port, and is eligible for automatic selection only when
+  exactly one fresh complete endpoint exists. Peer-table writers from the
+  probe and mDNS tasks are serialized.
 - [x] Identify AirDrop receiver capability inside AWDL MIF service-response
   TLVs. The bounded parser recognizes the AWDL DNS compression code for
   `_airdrop._tcp.local`, distinguishes `_asquic`, records PTR/SRV/TXT counts,
@@ -105,7 +110,13 @@ These hashes are research provenance, not dependencies in release firmware.
   retained hardware artifact. One live run reconstructed the Mac endpoint
   (`fe80::e833:2cff:fe82:f57f`, port 8770), but the capture script then lost
   the artifact to a fixed variable-shadowing bug; the clean repeat contained
-  PTR records only.
+  PTR records only. Three bounded 2026-08-23 follow-up controls did not
+  reproduce admission: a distance-one Mac and the same Mac as sole top master
+  completed all scheduled radio transmissions but returned no directed
+  evidence, while a rotated-away target failed all directed data radio
+  completions. The gate correctly emitted zero mDNS queries in every run.
+  Evidence is in
+  [`lab/2026-08-23-airdrop-endpoint-resolution.json`](lab/2026-08-23-airdrop-endpoint-resolution.json).
 - [ ] Establish TCP to the discovered AirDrop endpoint. A scoped TCP attempt
   to the confirmed Mac address/port was emitted during the bounded lab but
   ended with `EHOSTUNREACH`; no AWDL neighbor admission occurred in that run.

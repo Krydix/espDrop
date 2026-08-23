@@ -245,6 +245,28 @@ the table can return exactly one fresh receiver or reject the selection as
 not-found/ambiguous. Evidence is in
 [`lab/2026-08-23-awdl-service-identification.json`](lab/2026-08-23-awdl-service-identification.json).
 
+## DNS-SD endpoint publication
+
+The DNS-SD cache now publishes a receiver only after PTR, SRV, TXT, and AAAA
+state has converged. The advertised IPv6 address must match an already
+observed ephemeral AWDL peer; the service instance, IPv6 address, and
+advertised port are then stored together. A separate selector returns a peer
+only when exactly one fresh complete endpoint exists. The probe and mDNS tasks
+serialize peer-table writes.
+
+Resolution is deliberately paced at one missing question per round so the
+eight-frame AWDL transmit queue is not flooded. The first multicast question
+sets the unicast-response bit and retransmissions clear it, following
+[RFC 6762 section 5.4](https://www.rfc-editor.org/rfc/rfc6762.html#section-5.4).
+The PTR to SRV/TXT/AAAA follow-up behavior follows
+[RFC 6763 section 12](https://www.rfc-editor.org/rfc/rfc6763.html#section-12).
+
+**NOT YET CONFIRMED ON HARDWARE:** three bounded attempts failed the existing
+directed-evidence admission gate, so they sent zero mDNS queries. This is not
+endpoint-resolution failure; the resolver never became eligible to transmit.
+The negative controls and exact boundary are retained in
+[`lab/2026-08-23-airdrop-endpoint-resolution.json`](lab/2026-08-23-airdrop-endpoint-resolution.json).
+
 ## Timing model
 
 **CONFIRMED by the OWL research:** AWDL divides time into availability windows

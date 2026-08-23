@@ -158,6 +158,11 @@ int main(void)
     assert(!espdrop_mdns_build_query(
         query, sizeof(query), &query_length, "bad..name",
         ESPDROP_MDNS_TYPE_AAAA, true));
+    assert(espdrop_mdns_build_query(
+        query, sizeof(query), &query_length,
+        "abc._airdrop._tcp.local", ESPDROP_MDNS_TYPE_TXT, false));
+    assert(query[query_length - 2U] == 0x00U);
+    assert(query[query_length - 1U] == 0x01U);
 
     puts("AirDrop mDNS tests passed");
     return 0;

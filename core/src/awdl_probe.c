@@ -338,26 +338,29 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
     }
 }
 
-static espdrop_peer_t *observe_awdl_peer(const awdl_probe_record_t *record)
+static void observe_awdl_peer(const awdl_probe_record_t *record)
 {
     espdrop_peer_table_t *table = espdrop_peers();
-    if (table == NULL) {
-        return NULL;
+    if (table == NULL || !espdrop_lock_peers()) {
+        return;
     }
+    uint8_t ipv6[ESPDROP_IPV6_BYTES];
+    espdrop_awdl_link_local_from_mac(record->source, ipv6);
     espdrop_peer_observation_t observation = {
         .id = {.length = 6},
         .signals = ESPDROP_PEER_SIGNAL_AWDL,
         .rssi = record->rssi,
         .seen_ms = record->timestamp_us / 1000U,
         .awdl_mac = record->source,
+        .ipv6 = ipv6,
     };
     memcpy(observation.id.bytes, record->source, 6);
-    espdrop_peer_t *peer = NULL;
-    if (espdrop_peer_table_observe(table, &observation, &peer) !=
+    if (espdrop_peer_table_observe(table, &observation, NULL) !=
         ESPDROP_TABLE_OK) {
-        return NULL;
+        espdrop_unlock_peers();
+        return;
     }
-    return peer;
+    espdrop_unlock_peers();
 }
 
 static void apply_mif_to_peer(
@@ -368,7 +371,7 @@ static void apply_mif_to_peer(
     uint64_t seen_ms)
 {
     espdrop_peer_table_t *table = espdrop_peers();
-    if (table == NULL) {
+    if (table == NULL || !espdrop_lock_peers()) {
         return;
     }
     espdrop_peer_id_t id = {.length = 6};
@@ -381,6 +384,7 @@ static void apply_mif_to_peer(
         }
     }
     if (peer == NULL) {
+        espdrop_unlock_peers();
         return;
     }
 
@@ -436,6 +440,7 @@ static void apply_mif_to_peer(
                           sizeof(peer->service_id) - 1U);
         }
     }
+    espdrop_unlock_peers();
 }
 
 static void log_channel_sequence(
@@ -674,7 +679,7 @@ static void probe_log_task(void *argument)
                 if (record.directed_to_self) {
                     espdrop_awdl_tx_lab_note_directed_peer(record.source);
                 }
-                (void)observe_awdl_peer(&record);
+                observe_awdl_peer(&record);
                 ++stats.action_frames;
                 if (record.subtype == ESPDROP_AWDL_ACTION_MIF) {
                     ++stats.master_indication_frames;

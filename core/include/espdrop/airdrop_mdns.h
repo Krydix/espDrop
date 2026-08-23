@@ -32,6 +32,7 @@ typedef struct {
     bool has_srv;
     bool has_txt;
     bool has_ipv6;
+    bool endpoint_published;
 } espdrop_airdrop_service_t;
 
 typedef struct {

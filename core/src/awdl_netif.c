@@ -8,8 +8,10 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_netif_net_stack.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "espdrop/airdrop_mdns.h"
+#include "espdrop/espdrop.h"
 #include "espdrop/awdl_tx_lab.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -26,7 +28,7 @@
 #define AWDL_NETIF_MTU 1460U
 #define AWDL_MDNS_PORT 5353U
 #define AWDL_MDNS_QUERY_ATTEMPTS 6U
-#define AWDL_MDNS_RESOLVE_BUDGET 4U
+#define AWDL_MDNS_RESOLVE_BUDGET 1U
 
 typedef struct {
     esp_netif_driver_base_t base;
@@ -162,6 +164,39 @@ static void log_service(const espdrop_airdrop_service_t *service)
              service->has_txt && service->txt[0] != '\0' ? service->txt : "-");
 }
 
+static bool publish_complete_service(
+    const espdrop_airdrop_service_t *service)
+{
+    espdrop_peer_table_t *table = espdrop_peers();
+    if (table == NULL || !espdrop_lock_peers()) {
+        return false;
+    }
+    espdrop_peer_t *peer = NULL;
+    uint8_t peer_mac[6] = {0};
+    const espdrop_table_result_t result =
+        espdrop_peer_table_apply_airdrop_endpoint(
+            table, service->ipv6, service->port, service->instance,
+            (uint64_t)esp_timer_get_time() / 1000U, &peer);
+    if (result == ESPDROP_TABLE_OK && peer != NULL) {
+        memcpy(peer_mac, peer->awdl_mac, sizeof(peer_mac));
+    }
+    espdrop_unlock_peers();
+    if (result != ESPDROP_TABLE_OK || peer == NULL) {
+        return false;
+    }
+    char address[INET6_ADDRSTRLEN] = "-";
+    ip6_addr_t ipv6;
+    memcpy(&ipv6, service->ipv6, sizeof(service->ipv6));
+    (void)inet6_ntoa_r(ipv6, address, sizeof(address));
+    ESP_LOGW(TAG,
+             "AWDL-AIRDROP-ENDPOINT instance=%s ipv6=%s port=%u "
+             "peer=%02x:%02x:%02x:%02x:%02x:%02x complete=1",
+             service->instance, address, service->port,
+             peer_mac[0], peer_mac[1], peer_mac[2], peer_mac[3],
+             peer_mac[4], peer_mac[5]);
+    return true;
+}
+
 static bool receive_mdns_packet(int socket_fd)
 {
     static uint8_t packet[768];
@@ -201,10 +236,15 @@ static bool receive_mdns_packet(int socket_fd)
     stats.mdns_services = (uint32_t)mdns_cache.service_count;
     stats.mdns_complete_services = 0U;
     for (size_t index = 0U; index < mdns_cache.service_count; ++index) {
-        if (espdrop_airdrop_service_complete(&mdns_cache.services[index])) {
+        espdrop_airdrop_service_t *service = &mdns_cache.services[index];
+        if (espdrop_airdrop_service_complete(service)) {
             ++stats.mdns_complete_services;
+            if (!service->endpoint_published &&
+                publish_complete_service(service)) {
+                service->endpoint_published = true;
+            }
         }
-        log_service(&mdns_cache.services[index]);
+        log_service(service);
     }
     return true;
 }
@@ -297,12 +337,13 @@ static ssize_t send_mdns_question(
     int socket_fd,
     const struct sockaddr_in6 *destination,
     const char *name,
-    uint16_t type)
+    uint16_t type,
+    bool unicast_response)
 {
     uint8_t query[ESPDROP_MDNS_NAME_BYTES + 20U];
     size_t query_length = 0U;
     if (!espdrop_mdns_build_query(query, sizeof(query), &query_length,
-                                  name, type, true)) {
+                                  name, type, unicast_response)) {
         errno = EINVAL;
         return -1;
     }
@@ -343,7 +384,7 @@ static void send_resolution_questions(
             }
             const ssize_t sent = send_mdns_question(
                 socket_fd, destination, questions[question].name,
-                questions[question].type);
+                questions[question].type, round == 1U);
             ESP_LOGI(TAG,
                      "AWDL-MDNS-RESOLVE round=%u name=%s type=%u "
                      "bytes=%d error=%d",
@@ -455,6 +496,8 @@ static void mdns_task(void *argument)
         .sin6_scope_id = (uint32_t)interface_index,
     };
     (void)inet6_aton("ff02::fb", &destination.sin6_addr);
+    ESP_LOGI(TAG, "AWDL-MDNS destination=multicast ipv6=ff02::fb port=%u",
+             AWDL_MDNS_PORT);
 
     /* Do not enqueue DNS traffic until the selected peer has supplied a valid
      * schedule and the bounded transmitter has drained at least one netif
@@ -477,7 +520,7 @@ static void mdns_task(void *argument)
          ++attempt) {
         const ssize_t sent = send_mdns_question(
             socket_fd, &destination, "_airdrop._tcp.local",
-            ESPDROP_MDNS_TYPE_PTR);
+            ESPDROP_MDNS_TYPE_PTR, attempt == 1U);
         ESP_LOGI(TAG, "AWDL-MDNS-QUERY attempt=%u bytes=%d error=%d",
                  attempt, (int)sent, sent < 0 ? errno : 0);
 

@@ -25,6 +25,8 @@ esp_err_t espdrop_init(const espdrop_config_t *config);
 const char *espdrop_version(void);
 const char *espdrop_awdl_backend_name(void);
 espdrop_peer_table_t *espdrop_peers(void);
+bool espdrop_lock_peers(void);
+void espdrop_unlock_peers(void);
 esp_err_t espdrop_discover(uint32_t timeout_ms, size_t *peer_count);
 esp_err_t espdrop_send_file(const espdrop_peer_t *peer, const char *path);
 esp_err_t espdrop_on_receive(

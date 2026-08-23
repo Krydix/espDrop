@@ -3,6 +3,8 @@
 #include <stdbool.h>
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "espdrop";
 static espdrop_peer_table_t peer_table;
@@ -10,6 +12,7 @@ static espdrop_config_t active_config;
 static bool initialized;
 static espdrop_receive_handler_t receive_handler;
 static void *receive_context;
+static SemaphoreHandle_t peer_table_mutex;
 
 esp_err_t espdrop_init(const espdrop_config_t *config)
 {
@@ -19,6 +22,12 @@ esp_err_t espdrop_init(const espdrop_config_t *config)
     }
 
     active_config = *config;
+    if (peer_table_mutex == NULL) {
+        peer_table_mutex = xSemaphoreCreateMutex();
+        if (peer_table_mutex == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
     espdrop_peer_table_init(&peer_table);
     initialized = true;
 
@@ -42,6 +51,19 @@ const char *espdrop_awdl_backend_name(void)
 espdrop_peer_table_t *espdrop_peers(void)
 {
     return initialized ? &peer_table : NULL;
+}
+
+bool espdrop_lock_peers(void)
+{
+    return peer_table_mutex != NULL &&
+           xSemaphoreTake(peer_table_mutex, portMAX_DELAY) == pdTRUE;
+}
+
+void espdrop_unlock_peers(void)
+{
+    if (peer_table_mutex != NULL) {
+        (void)xSemaphoreGive(peer_table_mutex);
+    }
 }
 
 esp_err_t espdrop_discover(uint32_t timeout_ms, size_t *peer_count)

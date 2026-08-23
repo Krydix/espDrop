@@ -254,6 +254,13 @@ MDNS_SERVICE = re.compile(
     re.IGNORECASE,
 )
 
+MDNS_ENDPOINT = re.compile(
+    r"AWDL-AIRDROP-ENDPOINT instance=(?P<instance>[^ ]+) "
+    r"ipv6=(?P<ipv6>[^ ]+) port=(?P<port>\d+) "
+    r"peer=(?P<peer>[0-9a-f:]+) complete=(?P<complete>\d+)",
+    re.IGNORECASE,
+)
+
 AIRDROP_TCP = re.compile(
     r"AWDL-AIRDROP-TCP instance=(?P<instance>[^ ]+) "
     r"target=(?P<target>[^ ]+) ipv6=(?P<ipv6>[^ ]+) "
@@ -305,6 +312,7 @@ def main() -> None:
     mdns_packets = []
     mdns_summary = None
     mdns_services = []
+    mdns_endpoints = []
     airdrop_tcp = []
     boot_lines = []
     with open_without_reset(args.port, timeout=0.25) as connection:
@@ -491,6 +499,12 @@ def main() -> None:
                             "complete"):
                     service[key] = int(service[key])
                 mdns_services.append(service)
+            mdns_endpoint_match = MDNS_ENDPOINT.search(line)
+            if mdns_endpoint_match:
+                endpoint = mdns_endpoint_match.groupdict()
+                endpoint["port"] = int(endpoint["port"])
+                endpoint["complete"] = int(endpoint["complete"])
+                mdns_endpoints.append(endpoint)
             tcp_match = AIRDROP_TCP.search(line)
             if tcp_match:
                 tcp_probe = tcp_match.groupdict()
@@ -561,6 +575,7 @@ def main() -> None:
             "mdnsPackets": mdns_packets,
             "mdnsSummary": mdns_summary,
             "airdropServices": mdns_services,
+            "airdropEndpoints": mdns_endpoints,
             "airdropTcp": airdrop_tcp,
         },
         "bootLogPrefix": boot_lines,

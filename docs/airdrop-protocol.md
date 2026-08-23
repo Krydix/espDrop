@@ -92,6 +92,12 @@ The wire layout and compression constants are cross-checked against the
 Compact local evidence is in
 [`lab/2026-08-23-awdl-service-identification.json`](lab/2026-08-23-awdl-service-identification.json).
 
+For transport use, an AirDrop receiver is stricter than a service hint. The
+core now distinguishes an AirDrop-advertising peer from a complete endpoint:
+the latter requires a converged PTR/SRV/TXT/AAAA tuple and stores the service
+instance, scoped IPv6 address, and advertised TCP port on one ephemeral peer.
+Only a unique, fresh, complete endpoint can be selected automatically.
+
 ## Implementation rule
 
 No AirDrop endpoint is considered implemented until its exact request headers,

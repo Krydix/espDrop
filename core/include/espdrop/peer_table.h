@@ -41,6 +41,20 @@ espdrop_table_result_t espdrop_peer_table_select_unique_airdrop(
     uint64_t max_age_ms,
     const espdrop_peer_t **peer);
 
+espdrop_table_result_t espdrop_peer_table_apply_airdrop_endpoint(
+    espdrop_peer_table_t *table,
+    const uint8_t ipv6[ESPDROP_IPV6_BYTES],
+    uint16_t port,
+    const char *service_id,
+    uint64_t seen_ms,
+    espdrop_peer_t **peer);
+
+espdrop_table_result_t espdrop_peer_table_select_unique_airdrop_endpoint(
+    const espdrop_peer_table_t *table,
+    uint64_t now_ms,
+    uint64_t max_age_ms,
+    const espdrop_peer_t **peer);
+
 bool espdrop_peer_id_equal(
     const espdrop_peer_id_t *left,
     const espdrop_peer_id_t *right);

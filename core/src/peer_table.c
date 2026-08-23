@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+static void copy_text(char *destination, size_t capacity, const char *source);
+
 static bool peer_id_valid(const espdrop_peer_id_t *id)
 {
     return id != NULL && id->length > 0 &&
@@ -69,6 +71,77 @@ espdrop_table_result_t espdrop_peer_table_select_unique_airdrop(
         const bool fresh = candidate->airdrop_seen_ms <= now_ms &&
             now_ms - candidate->airdrop_seen_ms <= max_age_ms;
         if (!fresh) {
+            continue;
+        }
+        if (*peer != NULL) {
+            *peer = NULL;
+            return ESPDROP_TABLE_AMBIGUOUS;
+        }
+        *peer = candidate;
+    }
+    return *peer == NULL ? ESPDROP_TABLE_NOT_FOUND : ESPDROP_TABLE_OK;
+}
+
+espdrop_table_result_t espdrop_peer_table_apply_airdrop_endpoint(
+    espdrop_peer_table_t *table,
+    const uint8_t ipv6[ESPDROP_IPV6_BYTES],
+    uint16_t port,
+    const char *service_id,
+    uint64_t seen_ms,
+    espdrop_peer_t **peer)
+{
+    if (table == NULL || ipv6 == NULL || port == 0U || service_id == NULL ||
+        service_id[0] == '\0') {
+        return ESPDROP_TABLE_INVALID_ARGUMENT;
+    }
+    if (peer != NULL) {
+        *peer = NULL;
+    }
+    espdrop_peer_t *match = NULL;
+    for (size_t index = 0U; index < table->count; ++index) {
+        espdrop_peer_t *candidate = &table->peers[index];
+        if ((candidate->signals & ESPDROP_PEER_SIGNAL_AWDL) == 0U ||
+            memcmp(candidate->ipv6, ipv6, ESPDROP_IPV6_BYTES) != 0) {
+            continue;
+        }
+        if (match != NULL) {
+            return ESPDROP_TABLE_AMBIGUOUS;
+        }
+        match = candidate;
+    }
+    if (match == NULL) {
+        return ESPDROP_TABLE_NOT_FOUND;
+    }
+    match->signals |= ESPDROP_PEER_SIGNAL_AIRDROP;
+    match->airdrop_seen_ms = seen_ms;
+    if (seen_ms > match->last_seen_ms) {
+        match->last_seen_ms = seen_ms;
+    }
+    memcpy(match->ipv6, ipv6, ESPDROP_IPV6_BYTES);
+    match->airdrop_port = port;
+    match->airdrop_endpoint_complete = true;
+    copy_text(match->service_id, sizeof(match->service_id), service_id);
+    if (peer != NULL) {
+        *peer = match;
+    }
+    return ESPDROP_TABLE_OK;
+}
+
+espdrop_table_result_t espdrop_peer_table_select_unique_airdrop_endpoint(
+    const espdrop_peer_table_t *table,
+    uint64_t now_ms,
+    uint64_t max_age_ms,
+    const espdrop_peer_t **peer)
+{
+    if (table == NULL || peer == NULL) {
+        return ESPDROP_TABLE_INVALID_ARGUMENT;
+    }
+    *peer = NULL;
+    for (size_t index = 0U; index < table->count; ++index) {
+        const espdrop_peer_t *candidate = &table->peers[index];
+        if (!candidate->airdrop_endpoint_complete ||
+            candidate->airdrop_seen_ms > now_ms ||
+            now_ms - candidate->airdrop_seen_ms > max_age_ms) {
             continue;
         }
         if (*peer != NULL) {

@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "AirDrop DNS-SD endpoint reconstruction and peer publication",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "channel": 6,
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "software": {
+    "recordsRequired": [
+      "PTR",
+      "SRV",
+      "TXT",
+      "AAAA"
+    ],
+    "endpointFields": [
+      "service instance",
+      "IPv6 address",
+      "advertised TCP port"
+    ],
+    "awdlIpv6DerivedForObservedPeers": true,
+    "completeEndpointPublishedToPeerTable": true,
+    "peerTableWritersSerialized": true,
+    "uniqueFreshCompleteEndpointSelection": true,
+    "firstQueryRequestsUnicastResponse": true,
+    "retransmissionsRequestMulticastResponse": true,
+    "resolutionQuestionsPerRound": 1,
+    "captureSupportsStableEndpointEvents": true,
+    "hostTestsPassed": true,
+    "passiveFirmwareBuildPassed": true,
+    "boundedLabBuildPassed": true
+  },
+  "hardwareExperiments": [
+    {
+      "name": "mac-as-distance-one-endpoint",
+      "observedPeers": 2,
+      "targetPresent": true,
+      "targetRole": "distance-one peer beneath a different top master",
+      "actionRadioSuccess": 14,
+      "dataRadioSuccess": 28,
+      "directedReactions": 0,
+      "admitted": false,
+      "mdnsQueries": 0,
+      "completeEndpoints": 0
+    },
+    {
+      "name": "rotated-master-negative-control",
+      "observedPeers": 1,
+      "targetPresent": false,
+      "actionRadioSuccess": 14,
+      "dataRadioSuccess": 0,
+      "dataRadioFailed": 28,
+      "directedReactions": 0,
+      "admitted": false,
+      "mdnsQueries": 0,
+      "completeEndpoints": 0
+    },
+    {
+      "name": "mac-as-distance-zero-master",
+      "observedPeers": 1,
+      "targetPresent": true,
+      "targetRole": "sole observed top master",
+      "actionRadioSuccess": 14,
+      "dataRadioSuccess": 28,
+      "directedReactions": 0,
+      "admitted": false,
+      "mdnsQueries": 0,
+      "completeEndpoints": 0
+    }
+  ],
+  "result": {
+    "confirmed": "A complete PTR/SRV/TXT/AAAA tuple can be merged, matched by its advertised IPv6 address to an ephemeral AWDL peer, stored with its advertised port, and selected only when exactly one fresh complete endpoint exists. The admission gate suppressed every mDNS query in all three non-admitted hardware controls.",
+    "notConfirmed": "No 2026-08-23 run reproduced peer admission, so a complete live receiver endpoint was not retained and TCP was not attempted.",
+    "nextFocus": "Reproduce directed AWDL admission with a fresh receiver session, then retain the endpoint event emitted by the already-implemented resolver before attempting TCP."
+  }
+}

@@ -64,6 +64,16 @@ int main(void)
     assert(espdrop_peer_table_select_unique_airdrop(
                &table, 1000U, 500U, &selected) == ESPDROP_TABLE_NOT_FOUND);
     assert(selected == NULL);
+    assert(espdrop_peer_table_apply_airdrop_endpoint(
+               &table, ipv6, 8770U, "ephemeral-service", 1300U,
+               &peer) == ESPDROP_TABLE_OK);
+    assert(peer->airdrop_endpoint_complete);
+    assert(peer->airdrop_port == 8770U);
+    assert(espdrop_peer_table_select_unique_airdrop_endpoint(
+               &table, 1400U, 500U, &selected) == ESPDROP_TABLE_OK);
+    assert(selected == peer);
+    assert(espdrop_peer_table_select_unique_airdrop_endpoint(
+               &table, 1900U, 500U, &selected) == ESPDROP_TABLE_NOT_FOUND);
 
     const espdrop_peer_observation_t other = {
         .id = peer_id(2),
@@ -99,6 +109,32 @@ int main(void)
     assert(espdrop_peer_table_select_unique_airdrop(
                NULL, 0U, 0U, &selected) ==
            ESPDROP_TABLE_INVALID_ARGUMENT);
+    assert(espdrop_peer_table_apply_airdrop_endpoint(
+               &table, ipv6, 0U, "invalid", 0U, NULL) ==
+           ESPDROP_TABLE_INVALID_ARGUMENT);
+    const uint8_t unknown_ipv6[16] = {0xfeU, 0x80U, 0U, 0U, 0U, 0U, 0U, 0U,
+                                      0U, 0U, 0U, 0U, 0U, 0U, 0U, 2U};
+    assert(espdrop_peer_table_apply_airdrop_endpoint(
+               &table, unknown_ipv6, 8770U, "unknown", 1600U, NULL) ==
+           ESPDROP_TABLE_NOT_FOUND);
+    const uint8_t second_mac[6] = {0x02U, 0U, 0U, 0U, 0U, 2U};
+    const espdrop_peer_observation_t second_awdl = {
+        .id = peer_id(4),
+        .signals = ESPDROP_PEER_SIGNAL_AWDL,
+        .rssi = -55,
+        .seen_ms = 1600U,
+        .awdl_mac = second_mac,
+        .ipv6 = unknown_ipv6,
+    };
+    assert(espdrop_peer_table_observe(
+               &table, &second_awdl, NULL) == ESPDROP_TABLE_OK);
+    assert(espdrop_peer_table_apply_airdrop_endpoint(
+               &table, unknown_ipv6, 8770U, "second-endpoint", 1600U,
+               NULL) == ESPDROP_TABLE_OK);
+    assert(espdrop_peer_table_select_unique_airdrop_endpoint(
+               &table, 1600U, 500U, &selected) ==
+           ESPDROP_TABLE_AMBIGUOUS);
+    assert(selected == NULL);
 
     puts("peer table tests passed");
     return 0;
