@@ -66,6 +66,9 @@ typedef struct {
     uint8_t icmp_type;
     uint16_t icmp_identifier;
     uint16_t icmp_sequence;
+    uint16_t tcp_source_port;
+    uint16_t tcp_destination_port;
+    uint8_t tcp_flags;
     bool qos;
     bool amsdu;
     bool ipv6;
@@ -218,6 +221,12 @@ static void promiscuous_data_rx(const wifi_promiscuous_pkt_t *packet)
             record.icmp_identifier = read_be16(ipv6.icmp_payload);
             record.icmp_sequence = read_be16(ipv6.icmp_payload + 2U);
             ++echo_replies;
+        }
+        espdrop_awdl_tcp_t tcp;
+        if (espdrop_awdl_decode_tcp(&data, &tcp)) {
+            record.tcp_source_port = tcp.source_port;
+            record.tcp_destination_port = tcp.destination_port;
+            record.tcp_flags = tcp.flags;
         }
     }
     if (xQueueSend(data_queue, &record, 0) != pdTRUE) {
@@ -727,7 +736,7 @@ static void probe_log_task(void *argument)
                      "dst=%02x:%02x:%02x:%02x:%02x:%02x rssi=%d "
                      "channel=%u bytes=%u seq=%u qos=%u amsdu=%u "
                      "ethertype=0x%04x ipv6=%u next=%u hop=%u icmp=%u "
-                     "directed=%u",
+                     "tcp_src=%u tcp_dst=%u tcp_flags=0x%02x directed=%u",
                      data_record.source[0], data_record.source[1],
                      data_record.source[2], data_record.source[3],
                      data_record.source[4], data_record.source[5],
@@ -741,6 +750,9 @@ static void probe_log_task(void *argument)
                      data_record.ethertype, data_record.ipv6 ? 1U : 0U,
                      data_record.next_header, data_record.hop_limit,
                      data_record.icmp_type,
+                     data_record.tcp_source_port,
+                     data_record.tcp_destination_port,
+                     data_record.tcp_flags,
                      data_record.directed_to_self ? 1U : 0U);
             if (data_record.directed_to_self && data_record.ipv6 &&
                 data_record.next_header == 58U &&

@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "TCP SYN classification to an exact AirDrop DNS-SD endpoint",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "normalBuildTransmitEnabled": false
+  },
+  "endpoint": {
+    "peerMac": "a6:ed:54:02:5b:4e",
+    "instance": "9df4fc4f18c2._airdrop._tcp.local",
+    "host": "308235b7-037e-431f-bce3-1fb6ef624237.local",
+    "ipv6": "fe80::a4ed:54ff:fe02:5b4e",
+    "port": 8770
+  },
+  "espBoundedRun": {
+    "scheduledWindows": 14,
+    "windowLatenessUs": {"minimum": 1, "maximum": 2},
+    "actionRadioSuccess": 14,
+    "netifRadioSuccess": 19,
+    "netifRadioFailed": 0,
+    "tcpSynSubmitted": 5,
+    "tcpSynChecksumValid": 5,
+    "tcpSourcePort": 51179,
+    "tcpDestinationPort": 8770,
+    "tcpSynAckReceived": 0,
+    "tcpResetReceived": 0,
+    "tcpConnectResult": "ETIMEDOUT",
+    "tcpConnectError": 116,
+    "mdnsResponsesReceived": 6,
+    "inboundTcpSegments": 0,
+    "inboundUnicastFramesToEsp": 0
+  },
+  "nativeMacControl": {
+    "interface": "awdl0",
+    "mac": "9e:cf:af:45:59:fe",
+    "neighborEntry": "permanent reachable",
+    "command": "nc -6 -vz -G 5 fe80::a4ed:54ff:fe02:5b4e%awdl0 8770",
+    "result": "Operation timed out"
+  },
+  "result": {
+    "confirmed": "lwIP emitted five checksum-valid TCP SYNs to the exact DNS-SD endpoint and espDrop submitted them in guarded common windows. No inbound TCP segment was decoded. The native Mac timed out to the same endpoint despite a reachable AWDL neighbor entry.",
+    "notConfirmed": "The ESP transmit callback's protocol-specific counter did not classify the driver-normalized returned frame; its generic callback reported all data frames successful. No receiver-ready positive control was available.",
+    "nextFocus": "Repeat with a receiver proven reachable from native macOS immediately before the ESP run, then compare SYN/SYN-ACK behavior. Investigate BLE wake/discoverability state if the native control remains unreachable."
+  }
+}

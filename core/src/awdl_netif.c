@@ -731,6 +731,16 @@ bool espdrop_awdl_netif_receive(const espdrop_awdl_data_t *data)
     if (!initialized || data == NULL || rx_queue == NULL) {
         return false;
     }
+    espdrop_awdl_tcp_t tcp;
+    if (espdrop_awdl_decode_tcp(data, &tcp)) {
+        ++stats.tcp_rx_segments;
+        if ((tcp.flags & 0x12U) == 0x12U) {
+            ++stats.tcp_rx_syn_ack;
+        }
+        if ((tcp.flags & 0x04U) != 0U) {
+            ++stats.tcp_rx_rst;
+        }
+    }
     size_t length = 0U;
     if (!espdrop_awdl_data_to_ethernet(
             data, promiscuous_rx_scratch.bytes,
@@ -756,6 +766,21 @@ size_t espdrop_awdl_netif_flush(size_t maximum_frames)
     size_t flushed = 0U;
     while (flushed < maximum_frames &&
            xQueueReceive(tx_queue, &radio_tx_scratch, 0) == pdTRUE) {
+        espdrop_awdl_data_t ethernet_data = {
+            .ethertype = radio_tx_scratch.length >= 14U
+                             ? (uint16_t)((uint16_t)radio_tx_scratch.bytes[12]
+                                          << 8U) |
+                                   radio_tx_scratch.bytes[13]
+                             : 0U,
+            .payload = radio_tx_scratch.length >= 14U
+                           ? radio_tx_scratch.bytes + 14U : NULL,
+            .payload_length = radio_tx_scratch.length >= 14U
+                                  ? radio_tx_scratch.length - 14U : 0U,
+        };
+        espdrop_awdl_ipv6_t ipv6 = {0};
+        espdrop_awdl_tcp_t tcp = {0};
+        const bool is_ipv6 = espdrop_awdl_decode_ipv6(&ethernet_data, &ipv6);
+        const bool is_tcp = espdrop_awdl_decode_tcp(&ethernet_data, &tcp);
         size_t raw_length = 0U;
         const uint16_t marked_sequence =
             (uint16_t)(ESPDROP_AWDL_NETIF_SEQUENCE_MARKER |
@@ -769,6 +794,13 @@ size_t espdrop_awdl_netif_flush(size_t maximum_frames)
             continue;
         }
         ++stats.tx_submitted;
+        if (is_tcp) {
+            ++stats.tcp_tx_segments;
+            if ((tcp.flags & 0x02U) != 0U &&
+                (tcp.flags & 0x10U) == 0U) {
+                ++stats.tcp_tx_syn;
+            }
+        }
         const esp_err_t result =
             esp_wifi_80211_tx(WIFI_IF_STA, radio_raw_scratch,
                               (int)raw_length, false);
@@ -779,9 +811,14 @@ size_t espdrop_awdl_netif_flush(size_t maximum_frames)
         }
         ++flushed;
         ESP_LOGI(TAG,
-                 "AWDL-NETIF-TX bytes=%u ethertype=0x%02x%02x driver=%s count=%lu",
+                 "AWDL-NETIF-TX bytes=%u ethertype=0x%02x%02x next=%u "
+                 "tcp_src=%u tcp_dst=%u tcp_flags=0x%02x tcp_seq=%lu "
+                 "tcp_checksum=%u driver=%s count=%lu",
                  (unsigned)raw_length, radio_tx_scratch.bytes[12],
-                 radio_tx_scratch.bytes[13],
+                 radio_tx_scratch.bytes[13], is_ipv6 ? ipv6.next_header : 0U,
+                 tcp.source_port, tcp.destination_port, tcp.flags,
+                 (unsigned long)tcp.sequence,
+                 is_tcp && tcp.checksum_valid ? 1U : 0U,
                  esp_err_to_name(result), (unsigned long)stats.tx_submitted);
     }
     return flushed;
@@ -791,12 +828,42 @@ size_t espdrop_awdl_netif_flush(size_t maximum_frames)
 #endif
 }
 
-void espdrop_awdl_netif_note_tx_done(bool success)
+void espdrop_awdl_netif_note_tx_done(
+    bool success,
+    const uint8_t *frame,
+    size_t length)
 {
     if (success) {
         ++stats.tx_radio_success;
     } else {
         ++stats.tx_radio_failed;
+    }
+    espdrop_awdl_data_t data;
+    espdrop_awdl_tcp_t tcp;
+    const bool decoded_tcp =
+        espdrop_awdl_decode_data(frame, length, &data) &&
+        espdrop_awdl_decode_tcp(&data, &tcp);
+    /* ESP-IDF's TX callback may return a driver-normalized header. Keep a
+     * bounded fallback for espDrop's fixed non-QoS AWDL layout: IPv6 begins
+     * at byte 40 and its Next Header byte is at 46. */
+    bool normalized_layout_tcp = false;
+    if (frame != NULL) {
+        const size_t scan_limit = length < 64U ? length : 64U;
+        for (size_t offset = 24U; offset + 9U < scan_limit; ++offset) {
+            if (frame[offset] == 0x86U && frame[offset + 1U] == 0xddU &&
+                (frame[offset + 2U] >> 4U) == 6U &&
+                frame[offset + 8U] == 6U) {
+                normalized_layout_tcp = true;
+                break;
+            }
+        }
+    }
+    if (decoded_tcp || normalized_layout_tcp) {
+        if (success) {
+            ++stats.tcp_tx_radio_success;
+        } else {
+            ++stats.tcp_tx_radio_failed;
+        }
     }
 }
 

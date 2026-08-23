@@ -36,6 +36,13 @@ typedef struct {
     uint32_t mdns_complete_services;
     uint32_t airdrop_tcp_attempts;
     uint32_t airdrop_tcp_connected;
+    uint32_t tcp_tx_segments;
+    uint32_t tcp_tx_syn;
+    uint32_t tcp_tx_radio_success;
+    uint32_t tcp_tx_radio_failed;
+    uint32_t tcp_rx_segments;
+    uint32_t tcp_rx_syn_ack;
+    uint32_t tcp_rx_rst;
 } espdrop_awdl_netif_stats_t;
 
 esp_err_t espdrop_awdl_netif_init(const uint8_t self_mac[6]);
@@ -48,7 +55,10 @@ bool espdrop_awdl_netif_receive(const espdrop_awdl_data_t *data);
 
 size_t espdrop_awdl_netif_flush(size_t maximum_frames);
 
-void espdrop_awdl_netif_note_tx_done(bool success);
+void espdrop_awdl_netif_note_tx_done(
+    bool success,
+    const uint8_t *frame,
+    size_t length);
 
 espdrop_awdl_netif_stats_t espdrop_awdl_netif_stats(void);
 

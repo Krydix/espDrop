@@ -24,6 +24,14 @@ static uint16_t read_be16(const uint8_t *value)
     return (uint16_t)((uint16_t)value[0] << 8U) | value[1];
 }
 
+static uint32_t read_be32(const uint8_t *value)
+{
+    return ((uint32_t)value[0] << 24U) |
+           ((uint32_t)value[1] << 16U) |
+           ((uint32_t)value[2] << 8U) |
+           value[3];
+}
+
 static uint16_t read_le16(const uint8_t *value)
 {
     return (uint16_t)value[0] | ((uint16_t)value[1] << 8U);
@@ -372,6 +380,51 @@ bool espdrop_awdl_decode_ipv6(
         ipv6->icmp_payload = icmp + 4;
         ipv6->icmp_payload_length = payload_length - 4U;
     }
+    return true;
+}
+
+bool espdrop_awdl_decode_tcp(
+    const espdrop_awdl_data_t *data,
+    espdrop_awdl_tcp_t *tcp)
+{
+    espdrop_awdl_ipv6_t ipv6;
+    if (tcp == NULL || !espdrop_awdl_decode_ipv6(data, &ipv6) ||
+        ipv6.next_header != 6U) {
+        return false;
+    }
+    const uint16_t ipv6_payload_length = read_be16(data->payload + 4U);
+    if (ipv6_payload_length < 20U) {
+        return false;
+    }
+    const uint8_t *segment = data->payload + IPV6_HEADER_BYTES;
+    const uint8_t header_length = (uint8_t)((segment[12] >> 4U) * 4U);
+    if (header_length < 20U || header_length > ipv6_payload_length) {
+        return false;
+    }
+
+    memset(tcp, 0, sizeof(*tcp));
+    tcp->source_port = read_be16(segment);
+    tcp->destination_port = read_be16(segment + 2U);
+    tcp->sequence = read_be32(segment + 4U);
+    tcp->acknowledgment = read_be32(segment + 8U);
+    tcp->header_length = header_length;
+    tcp->flags = segment[13];
+    tcp->window = read_be16(segment + 14U);
+    tcp->payload_length = (uint16_t)(ipv6_payload_length - header_length);
+    uint32_t checksum = 0U;
+    checksum = checksum_add(checksum, ipv6.source, sizeof(ipv6.source));
+    checksum = checksum_add(checksum, ipv6.destination,
+                            sizeof(ipv6.destination));
+    const uint8_t pseudo_tail[8] = {
+        (uint8_t)((uint32_t)ipv6_payload_length >> 24U),
+        (uint8_t)((uint32_t)ipv6_payload_length >> 16U),
+        (uint8_t)((uint32_t)ipv6_payload_length >> 8U),
+        (uint8_t)ipv6_payload_length,
+        0U, 0U, 0U, 6U,
+    };
+    checksum = checksum_add(checksum, pseudo_tail, sizeof(pseudo_tail));
+    checksum = checksum_add(checksum, segment, ipv6_payload_length);
+    tcp->checksum_valid = checksum_finish(checksum) == 0U;
     return true;
 }
 

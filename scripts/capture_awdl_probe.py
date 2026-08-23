@@ -71,52 +71,7 @@ TX_WINDOW = re.compile(
     re.IGNORECASE,
 )
 
-TX_SUMMARY = re.compile(
-    r"TX-LAB-SUMMARY action_attempted=(?P<action_attempted>\d+) "
-    r"action_accepted=(?P<action_accepted>\d+) "
-    r"action_errors=(?P<action_errors>\d+) "
-    r"action_radio_completed=(?P<action_radio_completed>\d+) "
-    r"action_radio_success=(?P<action_radio_success>\d+) "
-    r"action_radio_failed=(?P<action_radio_failed>\d+) "
-    r"data_attempted=(?P<data_attempted>\d+) "
-    r"data_accepted=(?P<data_accepted>\d+) "
-    r"data_errors=(?P<data_errors>\d+) "
-    r"data_radio_completed=(?P<data_radio_completed>\d+) "
-    r"data_radio_success=(?P<data_radio_success>\d+) "
-    r"data_radio_failed=(?P<data_radio_failed>\d+) "
-    r"ns_radio_completed=(?P<ns_radio_completed>\d+) "
-    r"ns_radio_success=(?P<ns_radio_success>\d+) "
-    r"ns_radio_failed=(?P<ns_radio_failed>\d+) "
-    r"echo_attempted=(?P<echo_attempted>\d+) "
-    r"echo_accepted=(?P<echo_accepted>\d+) "
-    r"echo_errors=(?P<echo_errors>\d+) "
-    r"directed_reactions=(?P<directed_reactions>\d+) "
-    r"echo_radio_completed=(?P<echo_radio_completed>\d+) "
-    r"echo_radio_success=(?P<echo_radio_success>\d+) "
-    r"echo_radio_failed=(?P<echo_radio_failed>\d+) "
-    r"unknown_data_radio_completed=(?P<unknown_data_radio_completed>\d+) "
-    r"neighbor_advertisements=(?P<neighbor_advertisements>\d+) "
-    r"echo_replies=(?P<echo_replies>\d+) "
-    r"admitted=(?P<admitted>\d+) "
-    r"netif_tx_observed=(?P<netif_tx_observed>\d+) "
-    r"netif_tx_enqueued=(?P<netif_tx_enqueued>\d+) "
-    r"netif_tx_submitted=(?P<netif_tx_submitted>\d+) "
-    r"netif_tx_accepted=(?P<netif_tx_accepted>\d+) "
-    r"netif_tx_radio_success=(?P<netif_tx_radio_success>\d+) "
-    r"netif_tx_radio_failed=(?P<netif_tx_radio_failed>\d+) "
-    r"netif_rx_enqueued=(?P<netif_rx_enqueued>\d+) "
-    r"netif_rx_injected=(?P<netif_rx_injected>\d+) "
-    r"netif_rx_dropped=(?P<netif_rx_dropped>\d+) "
-    r"mdns_queries=(?P<mdns_queries>\d+) "
-    r"mdns_packets=(?P<mdns_packets>\d+) "
-    r"mdns_responses=(?P<mdns_responses>\d+) "
-    r"mdns_services=(?P<mdns_services>\d+) "
-    r"mdns_complete_services=(?P<mdns_complete_services>\d+) "
-    r"airdrop_tcp_attempts=(?P<airdrop_tcp_attempts>\d+) "
-    r"airdrop_tcp_connected=(?P<airdrop_tcp_connected>\d+)"
-    r"(?: anchor_admitted=(?P<anchor_admitted>\d+))?",
-    re.IGNORECASE,
-)
+TX_SUMMARY = re.compile(r"TX-LAB-SUMMARY (?P<details>.*)", re.IGNORECASE)
 
 TX_NS = re.compile(
     r"TX-LAB-NS number=(?P<number>\d+) bytes=(?P<bytes>\d+) "
@@ -151,6 +106,9 @@ AWDL_DATA = re.compile(
     r"amsdu=(?P<amsdu>\d+) ethertype=(?P<ethertype>0x[0-9a-f]+) "
     r"ipv6=(?P<ipv6>\d+) next=(?P<next_header>\d+) "
     r"hop=(?P<hop_limit>\d+) icmp=(?P<icmp_type>\d+) "
+    r"tcp_src=(?P<tcp_source_port>\d+) "
+    r"tcp_dst=(?P<tcp_destination_port>\d+) "
+    r"tcp_flags=(?P<tcp_flags>0x[0-9a-f]+) "
     r"directed=(?P<directed>\d+)",
     re.IGNORECASE,
 )
@@ -228,6 +186,11 @@ NETIF_READY = re.compile(
 NETIF_TX = re.compile(
     r"AWDL-NETIF-TX bytes=(?P<bytes>\d+) "
     r"ethertype=(?P<ethertype>0x[0-9a-f]+) "
+    r"next=(?P<next_header>\d+) tcp_src=(?P<tcp_source_port>\d+) "
+    r"tcp_dst=(?P<tcp_destination_port>\d+) "
+    r"tcp_flags=(?P<tcp_flags>0x[0-9a-f]+) "
+    r"tcp_seq=(?P<tcp_sequence>\d+) "
+    r"tcp_checksum=(?P<tcp_checksum>\d+) "
     r"driver=(?P<driver>[A-Z0-9_]+) count=(?P<count>\d+)",
     re.IGNORECASE,
 )
@@ -425,10 +388,14 @@ def main() -> None:
                 tx_windows.append(window)
             tx_summary_match = TX_SUMMARY.search(line)
             if tx_summary_match:
-                tx_summary = {}
-                for key, value in tx_summary_match.groupdict().items():
-                    if value is not None:
-                        tx_summary[key] = int(value)
+                tx_summary = {
+                    key: int(value)
+                    for key, value in re.findall(
+                        r"([a-z0-9_]+)=(\d+)",
+                        tx_summary_match.group("details"),
+                        re.IGNORECASE,
+                    )
+                }
             tx_reaction_match = TX_REACTION.search(line)
             if tx_reaction_match:
                 reaction = tx_reaction_match.groupdict()
@@ -497,9 +464,11 @@ def main() -> None:
                 for key in (
                     "rssi", "channel", "bytes", "sequence", "qos",
                     "amsdu", "ipv6", "next_header", "hop_limit",
-                    "icmp_type", "directed",
+                    "icmp_type", "tcp_source_port",
+                    "tcp_destination_port", "directed",
                 ):
                     record[key] = int(record[key])
+                record["tcp_flags"] = int(record["tcp_flags"], 16)
                 awdl_data_frames.append(record)
             data_diagnostic_match = AWDL_DATA_DIAGNOSTIC.search(line)
             if data_diagnostic_match:
@@ -525,8 +494,13 @@ def main() -> None:
             netif_tx_match = NETIF_TX.search(line)
             if netif_tx_match:
                 record = netif_tx_match.groupdict()
-                for key in ("bytes", "count"):
+                for key in (
+                    "bytes", "next_header", "tcp_source_port",
+                    "tcp_destination_port", "tcp_sequence", "tcp_checksum",
+                    "count",
+                ):
                     record[key] = int(record[key])
+                record["tcp_flags"] = int(record["tcp_flags"], 16)
                 netif_tx.append(record)
             mdns_query_match = MDNS_QUERY.search(line)
             if mdns_query_match:

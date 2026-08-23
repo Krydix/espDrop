@@ -191,6 +191,62 @@ int main(void)
         &data, decoded_ethernet, sizeof(decoded_ethernet) - 1U,
         &decoded_ethernet_length));
 
+    uint8_t tcp_ethernet[ESPDROP_ETHERNET_HEADER_BYTES + 60U] = {0};
+    memcpy(tcp_ethernet, target, 6U);
+    memcpy(tcp_ethernet + 6U, self, 6U);
+    tcp_ethernet[12] = 0x86U;
+    tcp_ethernet[13] = 0xddU;
+    tcp_ethernet[14] = 0x60U;
+    tcp_ethernet[18] = 0U;
+    tcp_ethernet[19] = 20U;
+    tcp_ethernet[20] = 6U;
+    tcp_ethernet[21] = 64U;
+    memcpy(tcp_ethernet + 22U, expected_self_ip, 16U);
+    memcpy(tcp_ethernet + 38U, expected_target_ip, 16U);
+    tcp_ethernet[54] = 0xc3U;
+    tcp_ethernet[55] = 0x50U;
+    tcp_ethernet[56] = 0x22U;
+    tcp_ethernet[57] = 0x42U;
+    tcp_ethernet[58] = 0x01U;
+    tcp_ethernet[59] = 0x02U;
+    tcp_ethernet[60] = 0x03U;
+    tcp_ethernet[61] = 0x04U;
+    tcp_ethernet[62] = 0x05U;
+    tcp_ethernet[63] = 0x06U;
+    tcp_ethernet[64] = 0x07U;
+    tcp_ethernet[65] = 0x08U;
+    tcp_ethernet[66] = 0x50U;
+    tcp_ethernet[67] = 0x12U;
+    tcp_ethernet[68] = 0x10U;
+    tcp_ethernet[69] = 0x00U;
+    uint32_t tcp_checksum = 0U;
+    tcp_checksum = add_words(tcp_checksum, tcp_ethernet + 22U, 16U);
+    tcp_checksum = add_words(tcp_checksum, tcp_ethernet + 38U, 16U);
+    const uint8_t tcp_pseudo_tail[8] = {0, 0, 0, 20, 0, 0, 0, 6};
+    tcp_checksum = add_words(tcp_checksum, tcp_pseudo_tail,
+                             sizeof(tcp_pseudo_tail));
+    tcp_checksum = add_words(tcp_checksum, tcp_ethernet + 54U, 20U);
+    const uint16_t tcp_checksum_value = (uint16_t)~fold(tcp_checksum);
+    tcp_ethernet[70] = (uint8_t)(tcp_checksum_value >> 8U);
+    tcp_ethernet[71] = (uint8_t)tcp_checksum_value;
+    assert(espdrop_awdl_build_ethernet_frame(
+        generic, sizeof(generic), &length, tcp_ethernet,
+        sizeof(tcp_ethernet), self, 0x235U, 0x8abdU));
+    assert(espdrop_awdl_decode_data(generic, length, &data));
+    espdrop_awdl_tcp_t tcp;
+    assert(espdrop_awdl_decode_tcp(&data, &tcp));
+    assert(tcp.source_port == 50000U);
+    assert(tcp.destination_port == 8770U);
+    assert(tcp.sequence == 0x01020304U);
+    assert(tcp.acknowledgment == 0x05060708U);
+    assert(tcp.header_length == 20U);
+    assert(tcp.flags == 0x12U);
+    assert(tcp.window == 4096U);
+    assert(tcp.payload_length == 0U);
+    assert(tcp.checksum_valid);
+    generic[46] = 17U;
+    assert(!espdrop_awdl_decode_tcp(&data, &tcp));
+
     puts("AWDL data tests passed");
     return 0;
 }

@@ -244,7 +244,7 @@ static void lab_tx_done(
         (uint16_t)data[AWDL_TX_LAB_AWDL_SEQUENCE_OFFSET] |
         ((uint16_t)data[AWDL_TX_LAB_AWDL_SEQUENCE_OFFSET + 1U] << 8U);
     if ((awdl_sequence & ESPDROP_AWDL_NETIF_SEQUENCE_MARKER) != 0U) {
-        espdrop_awdl_netif_note_tx_done(success);
+        espdrop_awdl_netif_note_tx_done(success, data, *data_length);
         return;
     }
     ++unknown_data_radio_completed;
@@ -379,7 +379,10 @@ static void lab_tx_task(void *argument)
              "mdns_responses=%lu mdns_services=%lu "
              "mdns_complete_services=%lu airdrop_tcp_attempts=%lu "
              "airdrop_tcp_connected=%lu peer_mappings=%lu "
-             "peer_mapping_failures=%lu",
+             "peer_mapping_failures=%lu tcp_tx_segments=%lu "
+             "tcp_tx_syn=%lu tcp_tx_radio_success=%lu "
+             "tcp_tx_radio_failed=%lu tcp_rx_segments=%lu "
+             "tcp_rx_syn_ack=%lu tcp_rx_rst=%lu",
              (unsigned long)attempted, (unsigned long)accepted,
              (unsigned long)errors,
              (unsigned long)action_radio_completed,
@@ -410,7 +413,14 @@ static void lab_tx_task(void *argument)
              (unsigned long)netif.airdrop_tcp_attempts,
              (unsigned long)netif.airdrop_tcp_connected,
              (unsigned long)netif.peer_mappings,
-             (unsigned long)netif.peer_mapping_failures);
+             (unsigned long)netif.peer_mapping_failures,
+             (unsigned long)netif.tcp_tx_segments,
+             (unsigned long)netif.tcp_tx_syn,
+             (unsigned long)netif.tcp_tx_radio_success,
+             (unsigned long)netif.tcp_tx_radio_failed,
+             (unsigned long)netif.tcp_rx_segments,
+             (unsigned long)netif.tcp_rx_syn_ack,
+             (unsigned long)netif.tcp_rx_rst);
     vTaskDelete(NULL);
 }
 #endif

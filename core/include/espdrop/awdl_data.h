@@ -35,6 +35,18 @@ typedef struct {
     size_t icmp_payload_length;
 } espdrop_awdl_ipv6_t;
 
+typedef struct {
+    uint16_t source_port;
+    uint16_t destination_port;
+    uint32_t sequence;
+    uint32_t acknowledgment;
+    uint16_t window;
+    uint16_t payload_length;
+    uint8_t flags;
+    uint8_t header_length;
+    bool checksum_valid;
+} espdrop_awdl_tcp_t;
+
 typedef enum {
     ESPDROP_AWDL_DATA_DECODE_OK = 0,
     ESPDROP_AWDL_DATA_DECODE_INVALID_ARGUMENT,
@@ -97,6 +109,10 @@ espdrop_awdl_data_decode_result_t espdrop_awdl_decode_data_ex(
 bool espdrop_awdl_decode_ipv6(
     const espdrop_awdl_data_t *data,
     espdrop_awdl_ipv6_t *ipv6);
+
+bool espdrop_awdl_decode_tcp(
+    const espdrop_awdl_data_t *data,
+    espdrop_awdl_tcp_t *tcp);
 
 bool espdrop_awdl_data_to_ethernet(
     const espdrop_awdl_data_t *data,

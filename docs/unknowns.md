@@ -148,10 +148,15 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
   [`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
 - [ ] Establish TCP to the discovered AirDrop endpoint. The current direct
   peer run used the complete advertised endpoint above and timed out with
-  `ETIMEDOUT` (116), despite successful bidirectional UDP/mDNS in the same
-  session. The next experiment must inspect the TCP SYN radio scheduling and
-  whether a SYN-ACK reaches the raw decoder/lwIP path; endpoint resolution is
-  no longer the blocker.
+  `ETIMEDOUT` (116). A diagnostic repeat proved that lwIP generated five
+  checksum-valid SYNs to port 8770 and espDrop submitted them in five guarded
+  common windows; no SYN-ACK, RST, or other inbound TCP segment appeared. A
+  native `nc` control from this Mac's `awdl0` also timed out to the same live
+  endpoint despite a reachable permanent neighbor entry. This run therefore
+  lacks a receiver-ready positive control and does not establish an ESP-only
+  TCP defect. Repeat only after native macOS can reach the selected receiver,
+  then compare SYN/SYN-ACK behavior. Evidence is in
+  [`lab/2026-08-23-awdl-tcp-syn-boundary.json`](lab/2026-08-23-awdl-tcp-syn-boundary.json).
 - [ ] Confirm TLS versions, cipher, certificate requirements, and scoping.
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
 - [ ] Confirm TransferID and connection-reuse requirements.

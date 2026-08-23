@@ -54,6 +54,16 @@ attempt to that exact advertised endpoint timed out with error 116, so TCP
 delivery/response is the next boundary. Compact evidence is in
 [`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
 
+The TCP diagnostic follow-up classified five checksum-valid SYNs from lwIP to
+that exact address and port. Each was submitted in a guarded common window;
+the raw receive path saw no SYN-ACK, RST, or other TCP segment. Crucially, a
+native `nc` attempt from this Mac's active `awdl0` also timed out to the same
+endpoint while the neighbor entry was reachable. The retained run is therefore
+a receiver-unavailable negative control, not proof of an ESP TCP framing bug.
+The next TCP run requires a native Apple positive control immediately before
+flashing the bounded lab. Evidence is in
+[`lab/2026-08-23-awdl-tcp-syn-boundary.json`](lab/2026-08-23-awdl-tcp-syn-boundary.json).
+
 ## Phase 1 gates
 
 The AWDL milestone is deliberately split:
