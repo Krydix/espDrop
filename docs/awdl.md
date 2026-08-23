@@ -22,6 +22,38 @@ dependency, not merely an optimization.
 election, RX/TX, netif, and peer-table code to ESP-IDF and claims ESP32-S3
 support. Its current head is pinned in [unknowns.md](unknowns.md).
 
+## OWL peer lifecycle correction
+
+**CONFIRMED FROM OWL SOURCE AND ON HARDWARE on 2026-08-23:** AWDL does not
+define the speculative Neighbor Solicitation/Echo or top-master "admission"
+handshake used by espDrop's earlier lab profiles. In OWL, a peer becomes valid
+after a received MIF plus nonzero Version-TLV version and device class. OWL
+then derives the peer's RFC 4291 link-local IPv6 address from its source MAC
+and installs that exact IPv6/MAC neighbor mapping. Master election supplies
+synchronization state; it does not authorize communication with child peers.
+
+espDrop now follows that model. Every OWL-valid MIF refreshes a bounded lwIP
+neighbor-cache entry directly, without sending NDP first. The bounded lab then
+targets the AirDrop-advertising MIF peer itself and uses its common channel
+windows. The previous staged-admission code and configuration have been
+removed. Admission-oriented experiment sections below are retained only as a
+historical record of the path to this correction and must not be read as the
+current protocol model.
+
+The first direct-peer hardware run created two mappings with zero failures,
+radio-completed 14/14 MIF actions and 19/19 queued netif frames, injected six
+inbound AWDL IPv6 frames with zero drops, received six mDNS response packets,
+and reconstructed one complete receiver:
+
+    9df4fc4f18c2._airdrop._tcp.local
+    308235b7-037e-431f-bce3-1fb6ef624237.local
+    fe80::a4ed:54ff:fe02:5b4e%awdl0 port 8770
+
+No Neighbor Advertisement or Echo Reply occurred or was required. A TCP
+attempt to that exact advertised endpoint timed out with error 116, so TCP
+delivery/response is the next boundary. Compact evidence is in
+[`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
+
 ## Phase 1 gates
 
 The AWDL milestone is deliberately split:
@@ -30,7 +62,7 @@ The AWDL milestone is deliberately split:
 2. **COMPLETE:** parse peer address, synchronization parameters, election data,
    and channel sequence without transmitting.
 3. **COMPLETE FOR MAC AND IPHONE PEERS:** emit synchronized PSF/MIF action
-   frames and observe an Apple peer admit the ESP after directed data.
+   frames and validate peers from their MIF/Version state.
 4. **COMPLETE FOR MAC AND IPHONE PEERS:** inject unicast AWDL/IPv6 data and
    confirm Apple-side processing.
 5. **COMPLETE AT THE RAW FRAME BOUNDARY:** form and decode link-local IPv6 in
@@ -261,11 +293,13 @@ sets the unicast-response bit and retransmissions clear it, following
 The PTR to SRV/TXT/AAAA follow-up behavior follows
 [RFC 6763 section 12](https://www.rfc-editor.org/rfc/rfc6763.html#section-12).
 
-**NOT YET CONFIRMED ON HARDWARE:** three bounded attempts failed the existing
-directed-evidence admission gate, so they sent zero mDNS queries. This is not
-endpoint-resolution failure; the resolver never became eligible to transmit.
-The negative controls and exact boundary are retained in
-[`lab/2026-08-23-airdrop-endpoint-resolution.json`](lab/2026-08-23-airdrop-endpoint-resolution.json).
+**CONFIRMED ON HARDWARE:** after replacing that unsupported gate with OWL's
+direct peer mapping, the bounded lab sent five queries by its summary, received
+six response packets, and retained the complete receiver endpoint shown above.
+The older negative controls remain in
+[`lab/2026-08-23-airdrop-endpoint-resolution.json`](lab/2026-08-23-airdrop-endpoint-resolution.json);
+the successful direct-peer result is in
+[`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
 
 ## Same-boot AirDrop target selection
 
@@ -335,7 +369,10 @@ so the correction still needs a live-AirDrop hardware repeat. Compact evidence
 is preserved in
 [`lab/2026-08-23-awdl-peer-copresence.json`](lab/2026-08-23-awdl-peer-copresence.json).
 
-## Staged top-master admission
+## Staged top-master admission (superseded experiment)
+
+> This experiment tested a protocol gate that OWL does not implement. It is
+> retained for provenance; the direct MIF peer model above replaces it.
 
 The retained distance-zero success and distance-one failures differ most
 clearly in election topology: the successful peer was the top master, whereas

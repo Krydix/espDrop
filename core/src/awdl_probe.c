@@ -365,7 +365,6 @@ static void observe_awdl_peer(const awdl_probe_record_t *record)
 
 static void apply_mif_to_peer(
     const uint8_t source[6],
-    const espdrop_awdl_action_t *action,
     const espdrop_awdl_mif_t *mif,
     const espdrop_awdl_service_profile_t *services,
     uint64_t seen_ms)
@@ -389,7 +388,11 @@ static void apply_mif_to_peer(
     }
 
     peer->awdl.mif_seen = true;
-    peer->awdl.protocol_version = action->version;
+    if (mif->has_version) {
+        peer->awdl.protocol_version = mif->version.version;
+        peer->awdl.device_class = mif->version.device_class;
+    }
+    peer->awdl.peer_valid = espdrop_awdl_mif_peer_valid(mif);
     if (mif->has_sync) {
         memcpy(peer->awdl.master, mif->sync.master, 6);
         peer->awdl.master_channel = mif->sync.master_channel;
@@ -547,7 +550,8 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
     if (detailed || result != ESPDROP_AWDL_PARSE_OK) {
         ESP_LOGI(TAG,
                  "MIF-PARSE src=%02x:%02x:%02x:%02x:%02x:%02x result=%d "
-                 "tlvs=%u sync=%u election1=%u election2=%u chanseq=%u",
+                 "tlvs=%u sync=%u election1=%u election2=%u chanseq=%u "
+                 "version=%u peer_valid=%u",
                  capture->source[0], capture->source[1], capture->source[2],
                  capture->source[3], capture->source[4], capture->source[5],
                  result,
@@ -556,11 +560,17 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
                  result == ESPDROP_AWDL_PARSE_OK && mif.has_election_v1,
                  result == ESPDROP_AWDL_PARSE_OK && mif.has_election_v2,
                  result == ESPDROP_AWDL_PARSE_OK &&
-                     mif.has_channel_sequence);
+                     mif.has_channel_sequence,
+                 result == ESPDROP_AWDL_PARSE_OK && mif.has_version,
+                 result == ESPDROP_AWDL_PARSE_OK &&
+                     espdrop_awdl_mif_peer_valid(&mif));
     }
     if (result != ESPDROP_AWDL_PARSE_OK) {
         log_raw_capture(capture);
         return;
+    }
+    if (espdrop_awdl_mif_peer_valid(&mif)) {
+        (void)espdrop_awdl_netif_add_peer(action.source);
     }
     espdrop_awdl_service_profile_t services;
     const espdrop_awdl_parse_result_t service_result =
@@ -585,7 +595,7 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
     espdrop_awdl_tx_lab_observe_mif(&action, &mif,
                                     services.has_airdrop_tcp,
                                     capture->received_at_us);
-    apply_mif_to_peer(capture->source, &action, &mif, &services,
+    apply_mif_to_peer(capture->source, &mif, &services,
                       capture->received_at_us / 1000U);
     if (!detailed) {
         return;

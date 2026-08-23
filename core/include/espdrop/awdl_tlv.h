@@ -25,6 +25,7 @@ typedef enum {
     ESPDROP_AWDL_TLV_SYNC_PARAMETERS = 4,
     ESPDROP_AWDL_TLV_ELECTION_V1 = 5,
     ESPDROP_AWDL_TLV_CHANNEL_SEQUENCE = 18,
+    ESPDROP_AWDL_TLV_VERSION = 21,
     ESPDROP_AWDL_TLV_ELECTION_V2 = 24,
 } espdrop_awdl_tlv_type_t;
 
@@ -94,15 +95,22 @@ typedef struct {
 } espdrop_awdl_election_v2_t;
 
 typedef struct {
+    uint8_t version;
+    uint8_t device_class;
+} espdrop_awdl_version_t;
+
+typedef struct {
     uint16_t tlv_count;
     bool has_sync;
     bool has_channel_sequence;
     bool has_election_v1;
     bool has_election_v2;
+    bool has_version;
     espdrop_awdl_sync_parameters_t sync;
     espdrop_awdl_channel_sequence_t channel_sequence;
     espdrop_awdl_election_v1_t election_v1;
     espdrop_awdl_election_v2_t election_v2;
+    espdrop_awdl_version_t version;
 } espdrop_awdl_mif_t;
 
 void espdrop_awdl_tlv_iterator_init(
@@ -133,6 +141,16 @@ espdrop_awdl_parse_result_t espdrop_awdl_parse_election_v2(
     const uint8_t *value,
     size_t length,
     espdrop_awdl_election_v2_t *election);
+
+espdrop_awdl_parse_result_t espdrop_awdl_parse_version(
+    const uint8_t *value,
+    size_t length,
+    espdrop_awdl_version_t *version);
+
+/* OWL src/peers.c considers a MIF sender a valid AWDL peer once the MIF also
+ * supplies non-zero version and device-class values. This is a peer-table
+ * predicate, not a network admission handshake. */
+bool espdrop_awdl_mif_peer_valid(const espdrop_awdl_mif_t *mif);
 
 espdrop_awdl_parse_result_t espdrop_awdl_parse_mif(
     const espdrop_awdl_action_t *action,

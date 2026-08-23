@@ -6,6 +6,7 @@
 #define AWDL_CHANNEL_HEADER_BYTES 6U
 #define AWDL_ELECTION_V1_BYTES 21U
 #define AWDL_ELECTION_V2_BYTES 40U
+#define AWDL_VERSION_BYTES 2U
 
 static uint16_t read_le16(const uint8_t *value)
 {
@@ -206,6 +207,28 @@ espdrop_awdl_parse_result_t espdrop_awdl_parse_election_v2(
     return ESPDROP_AWDL_PARSE_OK;
 }
 
+espdrop_awdl_parse_result_t espdrop_awdl_parse_version(
+    const uint8_t *value,
+    size_t length,
+    espdrop_awdl_version_t *version)
+{
+    if (value == NULL || version == NULL) {
+        return ESPDROP_AWDL_PARSE_INVALID_ARGUMENT;
+    }
+    if (length < AWDL_VERSION_BYTES) {
+        return ESPDROP_AWDL_PARSE_TRUNCATED;
+    }
+    version->version = value[0];
+    version->device_class = value[1];
+    return ESPDROP_AWDL_PARSE_OK;
+}
+
+bool espdrop_awdl_mif_peer_valid(const espdrop_awdl_mif_t *mif)
+{
+    return mif != NULL && mif->has_version && mif->version.version != 0U &&
+           mif->version.device_class != 0U;
+}
+
 espdrop_awdl_parse_result_t espdrop_awdl_parse_mif(
     const espdrop_awdl_action_t *action,
     espdrop_awdl_mif_t *mif)
@@ -253,6 +276,11 @@ espdrop_awdl_parse_result_t espdrop_awdl_parse_mif(
                 parsed = espdrop_awdl_parse_election_v2(
                     view.value, view.length, &mif->election_v2);
                 mif->has_election_v2 = parsed == ESPDROP_AWDL_PARSE_OK;
+                break;
+            case ESPDROP_AWDL_TLV_VERSION:
+                parsed = espdrop_awdl_parse_version(
+                    view.value, view.length, &mif->version);
+                mif->has_version = parsed == ESPDROP_AWDL_PARSE_OK;
                 break;
             default:
                 break;

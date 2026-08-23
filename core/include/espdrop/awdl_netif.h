@@ -27,6 +27,8 @@ typedef struct {
     uint32_t tx_errors;
     uint32_t tx_radio_success;
     uint32_t tx_radio_failed;
+    uint32_t peer_mappings;
+    uint32_t peer_mapping_failures;
     uint32_t mdns_queries;
     uint32_t mdns_packets;
     uint32_t mdns_responses;
@@ -37,6 +39,10 @@ typedef struct {
 } espdrop_awdl_netif_stats_t;
 
 esp_err_t espdrop_awdl_netif_init(const uint8_t self_mac[6]);
+
+/* Seed lwIP's IPv6 neighbor cache from an AWDL MIF source address, matching
+ * OWL's neighbor_add_rfc4291 behavior and avoiding an NDP handshake. */
+bool espdrop_awdl_netif_add_peer(const uint8_t peer_mac[6]);
 
 bool espdrop_awdl_netif_receive(const espdrop_awdl_data_t *data);
 

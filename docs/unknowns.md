@@ -13,16 +13,34 @@ and a reproducible test procedure.
 | archef2000/esp-owl | `653deac69fceecc441129cbfa89d141d236d019f` | ESP32-S3 reference; no repository-level license found |
 | seemoo-lab/owl | `da255a70f221784c836d943dd3f243bc798f223b` | GPL-3.0-or-later in inspected source notices; AWDL reference |
 | seemoo-lab/opendrop | `11fe7ba7861093b302bc0637e8cb10adf2d29337` | GPL-3.0-or-later in inspected source notices; AirDrop reference |
+| opendrop-rs/opendrop-rs | `dccc798e244363eb92d35e3c52e9a913188dda91` | Secondary AirDrop implementation inspected; OWL remains authoritative for peer lifecycle |
 | jedbillyb/airdrop-mt7921 | `d7c86192e3b79c520fde5965ddc24a1ad8cd1066` | GPL-3.0 current iOS 26 observations/patches |
 
 These hashes are research provenance, not dependencies in release firmware.
+
+## Current AWDL peer model
+
+**CORRECTED AND HARDWARE-CONFIRMED on 2026-08-23:** OWL does not gate a peer
+behind Neighbor Solicitation/Echo responses or top-master approval. Its peer
+validity predicate is received MIF plus nonzero Version-TLV version and device
+class; it immediately derives the RFC 4291 link-local address from the source
+MAC and installs that neighbor mapping. espDrop now does the same.
+
+A bounded direct-peer run created two mappings with zero failures, sent 19/19
+queued netif frames, injected 6/6 received IPv6 frames, obtained six mDNS
+response packets, and retained one complete AirDrop endpoint at
+`fe80::a4ed:54ff:fe02:5b4e`, port 8770. The exact-endpoint TCP attempt timed out
+with error 116. Therefore peer "admission" is no longer an open gate; TCP over
+the already-proven direct AWDL/IPv6 path is. Evidence is in
+[`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
 
 ## Hardware identity
 
 - **CONFIRMED:** the target is an ESP32-S3 revision 0.2 with 16 MiB SPI flash,
   8 MiB embedded octal PSRAM, and base MAC `1c:db:d4:42:3f:a0`. The ROM USB
   Serial/JTAG interface enumerates as vendor 0x303a, product 0x1001, serial
-  `1C:DB:D4:42:3F:A0`, currently `/dev/cu.usbmodem101`.
+  `1C:DB:D4:42:3F:A0`, currently `/dev/cu.usbmodem1101` (the device suffix may
+  change after re-enumeration).
 - **CONFIRMED:** a manual BOOT/reset entry was required for the first flash.
   Once espDrop booted, its USB Serial/JTAG console remained flashable without
   entering BOOT manually.
@@ -44,9 +62,9 @@ These hashes are research provenance, not dependencies in release firmware.
 - [x] Observe an Apple peer act upon ESP traffic; after a valid AWDL/IPv6
   Neighbor Solicitation, macOS installed the ESP's exact link-local/MAC pair
   as a previously absent `awdl0` neighbor.
-- [x] Reproduce peer admission against the stock iPhone; after espDrop echoed
-  its 16-slot channel sequence verbatim, the iPhone returned a Neighbor
-  Advertisement and matching Echo Reply directly to the ESP MAC.
+- [x] Validate and map a stock iPhone peer using the OWL predicate; its MIF
+  carried nonzero version/device-class state and the derived link-local/MAC
+  entry was installed without NDP.
 - [ ] Maintain channel-6 synchronization for 30 minutes.
 - [x] Attach the proven raw link-local IPv6 path through an ESP-IDF netif; a
   bounded run assigned the correct link-local address, transmitted 14/14
@@ -60,13 +78,9 @@ These hashes are research provenance, not dependencies in release firmware.
 - [x] mDNS multicast in both directions; an ESP-IDF UDP/5353 socket sent six
   `_airdrop._tcp.local` PTR queries and received four DNS responses from two
   Apple AWDL peers through the custom netif.
-- [x] Reproduce peer admission deterministically from the observed AWDL
-  election topology. While the intended iPhone peer advertised distance 1,
-  a distance-zero-only lab stayed passive for two 60-second runs. Retargeting
-  the same bounded profile to the distance-zero master immediately produced
-  one directed Neighbor Advertisement, two matching Echo Replies, 20/20
-  radio-successful lwIP frames, and 25 socket-level mDNS packets during the
-  retained capture.
+- [x] Map and communicate with an AirDrop endpoint independently of its
+  election-tree distance. The current lab targets an OWL-valid AirDrop MIF
+  directly; master state is used for synchronization rather than permission.
 - [x] Maintain dynamic election state from all observed MIF peers. The
   OWL-derived bounded model selects an immediate synchronization parent,
   propagates the top-master state, rejects loops/over-height paths, refreshes
@@ -75,7 +89,10 @@ These hashes are research provenance, not dependencies in release firmware.
   transmission. The fixed-channel lab extends peer expiry from two to five
   seconds because the S3 cannot follow peers into their advertised 5 GHz
   windows.
-- [ ] Admit a distance-one iPhone peer. Two bounded controls each achieved
+- [ ] Repeat the direct-peer hardware run while the selected AirDrop
+  advertiser reports nonzero election distance. No special admission
+  handshake is expected by the OWL model. Earlier negative controls each
+  achieved
   14/14 radio-successful NS and Echo probes with zero directed replies. The
   first followed the distance-zero master's sequence while addressing the
   iPhone. The second followed the iPhone's own sequence and corrected the
@@ -91,11 +108,8 @@ These hashes are research provenance, not dependencies in release firmware.
   synchronization schedule with that target's independently derived schedule;
   all 11 retained windows were marked copresent and all 42 probe frames again
   radio-completed without a directed reply. Target copresence is therefore not
-  sufficient for distance-one admission. The final one-burst-per-window fix is
-  host-tested; its hardware control saw no AirDrop receiver and correctly
-  remained passive. The missing behavior is now more likely elsewhere in peer
-  admission, the still-minimal advertised MIF, or the S3's inability to follow
-  5 GHz windows. Evidence is in
+  sufficient under the old experimental gate. Those results are historical,
+  not evidence of an AWDL membership requirement. Evidence is in
   [`lab/2026-08-23-awdl-auto-target.json`](lab/2026-08-23-awdl-auto-target.json)
   and
   [`lab/2026-08-23-awdl-peer-copresence.json`](lab/2026-08-23-awdl-peer-copresence.json).
@@ -122,38 +136,22 @@ These hashes are research provenance, not dependencies in release firmware.
 - [x] Select a live ephemeral AirDrop lab target without rebuilding firmware.
   With no explicit target, the bounded image waits for a parsed
   `_airdrop._tcp` MIF, locks that peer in RAM for one session, and records the
-  selection. A distance-zero qualifier is enabled by default for the lab; two
-  captures with no eligible receiver selected no target and transmitted
-  nothing. This removes the stale-MAC race without weakening the admission
-  gate. Evidence is in
-  [`lab/2026-08-23-awdl-auto-target.json`](lab/2026-08-23-awdl-auto-target.json).
-- [ ] Repeatably reconstruct a complete PTR/SRV/TXT/AAAA receiver in one
-  retained hardware artifact. One live run reconstructed the Mac endpoint
-  (`fe80::e833:2cff:fe82:f57f`, port 8770), but the capture script then lost
-  the artifact to a fixed variable-shadowing bug; the clean repeat contained
-  PTR records only. Three bounded 2026-08-23 follow-up controls did not
-  reproduce admission: a distance-one Mac and the same Mac as sole top master
-  completed all scheduled radio transmissions but returned no directed
-  evidence, while a rotated-away target failed all directed data radio
-  completions. The gate correctly emitted zero mDNS queries in every run.
-  Evidence is in
-  [`lab/2026-08-23-airdrop-endpoint-resolution.json`](lab/2026-08-23-airdrop-endpoint-resolution.json).
-  Same-boot protocol-driven target selection now removes the rebuild race,
-  and phase-aware target copresence removes schedule mismatch as the sole
-  explanation for the retained distance-one result. The target still failed
-  admission and sent zero mDNS queries; endpoint reconstruction therefore
-  remains unproven on the retained hardware path.
-- [ ] Establish TCP to the discovered AirDrop endpoint. A scoped TCP attempt
-  to the confirmed Mac address/port was emitted during the bounded lab but
-  ended with `EHOSTUNREACH`; no AWDL neighbor admission occurred in that run.
-  A later distance-zero master control passed admission and emitted a TCP SYN
-  to its derived link-local address using the guessed port 8770, but timed out
-  with `ETIMEDOUT` (116). Three PTR instances were observed afterward, so the
-  next test must resolve each instance's SRV/TXT/AAAA records and use the
-  advertised endpoint rather than the election master plus a fixed port.
-  Explicit bounded SRV/TXT/AAAA follow-up queries and exact target-address
-  filtering are implemented and host-tested, but distance-one admission did
-  not open the netif gate, so they have not yet transmitted on hardware.
+  selection. It no longer filters by election distance. The selected peer
+  must pass OWL's MIF/version/device-class validity predicate. Evidence is in
+  [`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
+- [x] Repeatably reconstruct a complete PTR/SRV/TXT/AAAA receiver in one
+  retained hardware artifact. The direct-peer run reconstructed
+  `9df4fc4f18c2._airdrop._tcp.local`, host
+  `308235b7-037e-431f-bce3-1fb6ef624237.local`, address
+  `fe80::a4ed:54ff:fe02:5b4e`, and advertised port 8770. The successful
+  artifact is
+  [`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
+- [ ] Establish TCP to the discovered AirDrop endpoint. The current direct
+  peer run used the complete advertised endpoint above and timed out with
+  `ETIMEDOUT` (116), despite successful bidirectional UDP/mDNS in the same
+  session. The next experiment must inspect the TCP SYN radio scheduling and
+  whether a SYN-ACK reaches the raw decoder/lwIP path; endpoint resolution is
+  no longer the blocker.
 - [ ] Confirm TLS versions, cipher, certificate requirements, and scoping.
 - [ ] Capture `/Discover`, `/Ask`, and `/Upload` for each direction.
 - [ ] Confirm TransferID and connection-reuse requirements.
@@ -172,6 +170,10 @@ These hashes are research provenance, not dependencies in release firmware.
 - [ ] Define a UI confirmation path for every ambiguous result.
 
 ## macOS lab capability
+
+> Historical note: the admission-gated narrative below records experiments
+> that led to the OWL source audit. The current model is the direct MIF peer
+> mapping described at the top of this ledger.
 
 **CONFIRMED:** this Mac has an active `awdl0` interface with link-local IPv6,
 and Apple's `sharingd`/AirDrop services are loaded. That makes it useful for

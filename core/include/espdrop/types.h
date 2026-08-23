@@ -36,6 +36,8 @@ typedef struct {
 typedef struct {
     bool mif_seen;
     uint8_t protocol_version;
+    uint8_t device_class;
+    bool peer_valid;
     uint8_t master[6];
     uint8_t sync_master[6];
     uint8_t master_channel;

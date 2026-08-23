@@ -17,10 +17,11 @@ The target interaction is:
 No app, account, Internet connection, infrastructure Wi-Fi, QR upload page, or
 cloud service.
 
-> **Research status:** the ESP32-S3 has completed a bounded ICMPv6 round trip
-> with a stock iPhone over AWDL. The repository also contains an ephemeral peer
-> table and the TapDrop correlation/session foundation. It does **not** yet
-> complete an AirDrop file transfer. See
+> **Research status:** the ESP32-S3 has exchanged bidirectional IPv6 with a
+> stock iPhone over AWDL and completed AirDrop DNS-SD discovery through an
+> ESP-IDF socket. It reconstructed a live receiver's exact IPv6 address and
+> advertised TCP port. It does **not** yet establish the AirDrop TCP/TLS session
+> or transfer a file. See
 > [the unknowns ledger](docs/unknowns.md) for evidence-backed status.
 
 ## What exists now
@@ -29,12 +30,11 @@ cloud service.
 - receive-only detection of AWDL MIF/PSF vendor action frames on channel 6
 - host-tested PSF/MIF construction plus a separate 15-second transmit lab
   profile (disabled in normal and web-flasher builds)
-- host-tested AWDL/IPv6 Neighbor Solicitation framing; macOS accepted it and
-  installed the ESP as a temporary `awdl0` IPv6 neighbor
+- OWL-compatible peer validity from MIF plus Version TLV, with RFC 4291
+  link-local/MAC neighbor mapping inserted directly into lwIP (no NDP gate)
 - a hardware-proven raw IPv6 round trip with a stock iPhone: its directed
   Neighbor Advertisement and matching Echo Reply were decoded on the S3
-- verbatim preservation of a peer's modern 16-slot AWDL channel sequence,
-  which was the admission requirement missing from the earlier probes
+- verbatim preservation of a peer's modern 16-slot AWDL channel sequence
 - bounded ephemeral BLE/AWDL/AirDrop peer model
 - TapDrop scoring based on timing, appearance, cross-layer observation, and
   RSSI
@@ -92,14 +92,14 @@ To generate the same browser installer used by CI:
 
     make web-installer
 
-The active action-frame experiment is intentionally separate:
+The active direct-peer experiment is intentionally separate:
 
     make lab-awdl-tx-test PORT=/dev/cu.usbmodemXXXX DURATION=25
 
-It waits for a valid live MIF, transmits for at most 15 seconds, and records
-raw-API acceptance plus separately classified radio completion for action
-frames, IPv6 Neighbor Solicitations, and Echo Requests. This is a research
-target, not a general-purpose firmware image.
+It waits for an OWL-valid live MIF, transmits for at most 15 seconds, installs
+the peer's derived link-local/MAC mapping, and records action/data radio
+completion plus socket-level mDNS/TCP results. This is a research target, not
+a general-purpose firmware image.
 
 Serve `build/web-installer` over localhost or HTTPS. GitHub Pages deployment
 is defined in [pages.yml](.github/workflows/pages.yml).

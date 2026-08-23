@@ -24,9 +24,10 @@ config ESPDROP_AWDL_TX_LAB
     depends on ESPDROP_AWDL_PROBE
     default n
     help
-        Research-only profile. After observing a valid MIF, transmit PSF/MIF
-        action frames plus bounded IPv6 neighbor and echo probes for no more
-        than 15 seconds. Normal and web-flasher builds must leave this disabled.
+        Research-only profile. After observing an OWL-valid MIF, derive and
+        seed the peer's RFC4291 link-local mapping, then transmit PSF/MIF and
+        queued IPv6 frames in bounded common windows for no more than 15
+        seconds. Normal and web-flasher builds must leave this disabled.
 
 config ESPDROP_AWDL_NETIF
     bool "Attach decoded AWDL IPv6 to an ESP-IDF network interface"
@@ -43,18 +44,17 @@ config ESPDROP_AWDL_MDNS_LAB
     default n
     help
         Joins ff02::fb on the AWDL interface and sends six PTR queries for
-        _airdrop._tcp.local after the selected peer returns a directed IPv6
-        Neighbor Advertisement or Echo Reply. Only use in the bounded
-        transmit lab.
+        _airdrop._tcp.local after the selected peer supplies an OWL-valid MIF
+        with version and device class. Only use in the bounded transmit lab.
 
 config ESPDROP_AWDL_LAB_TARGET_MAC
-    string "AWDL lab endpoint MAC (empty selects the sync anchor)"
+    string "AWDL lab endpoint MAC (empty permits auto-selection)"
     depends on ESPDROP_AWDL_TX_LAB
     default ""
     help
         Optional colon-separated AWDL peer MAC that receives the research
-        lab's Neighbor Solicitation and Echo probes. AirDrop endpoint tests
-        are restricted to the same peer. Production builds leave this empty.
+        lab's direct IPv6 traffic. AirDrop endpoint tests are restricted to
+        the same peer. Production builds leave this empty.
 
 config ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
     bool "Automatically target a live AirDrop TCP advertiser"
@@ -68,26 +68,6 @@ config ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
         explicit target MAC always takes precedence. Production builds leave
         this disabled.
 
-config ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO
-    bool "Require an AirDrop advertiser to be an AWDL master"
-    depends on ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
-    default y
-    help
-        Restrict automatic target selection to a MIF whose election-v2
-        distance is zero. This produces the reproducible admission control
-        topology before testing distance-one receivers. Explicit target MACs
-        are not affected.
-
-config ESPDROP_AWDL_LAB_AUTO_TARGET_REQUIRE_CHILD
-    bool "Require an AirDrop advertiser below another AWDL master"
-    depends on ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP && !ESPDROP_AWDL_LAB_AUTO_TARGET_DISTANCE_ZERO
-    default n
-    help
-        Research-only qualifier for the staged-admission experiment. Automatic
-        target selection waits for an AirDrop advertiser whose election-v2
-        distance is nonzero, proving that the target and top synchronization
-        master are distinct. Explicit target MACs are not affected.
-
 config ESPDROP_AWDL_LAB_SCHEDULE_MAC
     string "AWDL lab schedule-source MAC"
     depends on ESPDROP_AWDL_TX_LAB
@@ -99,17 +79,6 @@ config ESPDROP_AWDL_LAB_SCHEDULE_MAC
         endpoint MAC is the schedule source. Production builds leave this
         empty.
 
-config ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
-    bool "Wait for the schedule source to be an AWDL master"
-    depends on ESPDROP_AWDL_TX_LAB
-    default n
-    help
-        Research-only admission experiment. Do not start the bounded transmit
-        task until the schedule source advertises election distance
-        zero. This reproduces the topology of the successful peer-admission
-        capture.
-        Normal and web-flasher builds must leave this disabled.
-
 config ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
     bool "Continuously elect the AWDL synchronization parent"
     depends on ESPDROP_AWDL_TX_LAB
@@ -120,17 +89,6 @@ config ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
         parent's timing and channel sequence replace the fixed schedule-source
         override. Normal and web-flasher builds never transmit regardless of
         this setting.
-
-config ESPDROP_AWDL_LAB_STAGE_SYNC_ANCHOR
-    bool "Admit the top synchronization master before a separate endpoint"
-    depends on ESPDROP_AWDL_TX_LAB && ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
-    default n
-    help
-        Research-only two-stage admission experiment. When the selected
-        AirDrop endpoint differs from the elected top synchronization master,
-        direct Neighbor Solicitation and Echo probes to that master first.
-        Probe the endpoint only after the master returns directed IPv6
-        evidence. Normal and web-flasher builds leave this disabled.
 
 config TAPDROP_NFC_FIELD_GPIO
     int "NFC field-detect GPIO (-1 disables hardware input)"

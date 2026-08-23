@@ -19,6 +19,7 @@
 #include "lwip/inet.h"
 #include "lwip/mld6.h"
 #include "lwip/netif.h"
+#include "lwip/priv/nd6_priv.h"
 #include "lwip/sockets.h"
 #include "lwip/tcpip.h"
 
@@ -61,6 +62,54 @@ static uint16_t awdl_sequence;
 #endif
 static espdrop_awdl_netif_stats_t stats;
 static bool initialized;
+
+typedef struct {
+    struct netif *netif;
+    ip6_addr_t address;
+    uint8_t mac[6];
+    err_t result;
+    bool created;
+} awdl_neighbor_mapping_t;
+
+static void add_awdl_neighbor(void *argument)
+{
+    awdl_neighbor_mapping_t *mapping = argument;
+    int selected = -1;
+    for (int index = 0; index < LWIP_ND6_NUM_NEIGHBORS; ++index) {
+        if (neighbor_cache[index].state != ND6_NO_ENTRY &&
+            ip6_addr_eq(&neighbor_cache[index].next_hop_address,
+                        &mapping->address)) {
+            selected = index;
+            break;
+        }
+        if (selected < 0 &&
+            neighbor_cache[index].state == ND6_NO_ENTRY) {
+            selected = index;
+            mapping->created = true;
+        }
+    }
+    if (selected < 0) {
+        mapping->result = ERR_MEM;
+        return;
+    }
+
+    struct nd6_neighbor_cache_entry *entry = &neighbor_cache[selected];
+    if (entry->q != NULL) {
+        /* This path is called as soon as the MIF arrives, before socket traffic
+         * is started. Refuse to replace a queued NDP entry rather than leak or
+         * reorder lwIP-owned pbufs if that invariant is ever violated. */
+        mapping->result = ERR_INPROGRESS;
+        return;
+    }
+    ip6_addr_copy(entry->next_hop_address, mapping->address);
+    entry->netif = mapping->netif;
+    memset(entry->lladdr, 0, sizeof(entry->lladdr));
+    memcpy(entry->lladdr, mapping->mac, sizeof(mapping->mac));
+    entry->isrouter = 0U;
+    entry->state = ND6_REACHABLE;
+    entry->counter.reachable_time = reachable_time;
+    mapping->result = ERR_OK;
+}
 
 static esp_err_t driver_transmit(void *handle, void *buffer, size_t length)
 {
@@ -634,6 +683,47 @@ esp_err_t espdrop_awdl_netif_init(const uint8_t self_mac[6])
     ESP_LOGI(TAG, "AWDL esp-netif attached; radio TX=suppressed");
 #endif
     return ESP_OK;
+}
+
+bool espdrop_awdl_netif_add_peer(const uint8_t peer_mac[6])
+{
+    if (!initialized || awdl_netif == NULL || peer_mac == NULL) {
+        return false;
+    }
+    struct netif *lwip_netif = esp_netif_get_netif_impl(awdl_netif);
+    if (lwip_netif == NULL) {
+        ++stats.peer_mapping_failures;
+        return false;
+    }
+
+    uint8_t address_bytes[16];
+    espdrop_awdl_link_local_from_mac(peer_mac, address_bytes);
+    awdl_neighbor_mapping_t mapping = {
+        .netif = lwip_netif,
+        .result = ERR_IF,
+    };
+    memcpy(&mapping.address, address_bytes, sizeof(address_bytes));
+    ip6_addr_assign_zone(&mapping.address, IP6_UNICAST, lwip_netif);
+    memcpy(mapping.mac, peer_mac, sizeof(mapping.mac));
+    const err_t callback = tcpip_callback_wait(add_awdl_neighbor, &mapping);
+    if (callback != ERR_OK || mapping.result != ERR_OK) {
+        ++stats.peer_mapping_failures;
+        ESP_LOGW(TAG,
+                 "AWDL-PEER-MAP peer=%02x:%02x:%02x:%02x:%02x:%02x "
+                 "result=failed callback=%d error=%d",
+                 peer_mac[0], peer_mac[1], peer_mac[2], peer_mac[3],
+                 peer_mac[4], peer_mac[5], callback, mapping.result);
+        return false;
+    }
+    if (mapping.created) {
+        ++stats.peer_mappings;
+        ESP_LOGI(TAG,
+                 "AWDL-PEER-MAP peer=%02x:%02x:%02x:%02x:%02x:%02x "
+                 "result=created source=mif-rfc4291",
+                 peer_mac[0], peer_mac[1], peer_mac[2], peer_mac[3],
+                 peer_mac[4], peer_mac[5]);
+    }
+    return true;
 }
 
 bool espdrop_awdl_netif_receive(const espdrop_awdl_data_t *data)

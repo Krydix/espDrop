@@ -342,39 +342,6 @@ bool espdrop_awdl_next_common_channel_window_us(
     return false;
 }
 
-bool espdrop_awdl_select_admission_peer(
-    const espdrop_awdl_tx_state_t *state,
-    const uint8_t target[6],
-    const uint8_t admitted_anchor[6],
-    bool stage_sync_anchor,
-    uint8_t peer[6],
-    bool *is_target)
-{
-    if (!state_is_valid(state) || peer == NULL || is_target == NULL) {
-        return false;
-    }
-
-    if (target == NULL) {
-        memcpy(peer, state->sync_master, 6U);
-        *is_target = true;
-        return true;
-    }
-
-    const bool target_is_anchor = memcmp(target, state->master, 6U) == 0;
-    const bool anchor_is_admitted =
-        admitted_anchor != NULL &&
-        memcmp(admitted_anchor, state->master, 6U) == 0;
-    if (!stage_sync_anchor || target_is_anchor || anchor_is_admitted) {
-        memcpy(peer, target, 6U);
-        *is_target = true;
-        return true;
-    }
-
-    memcpy(peer, state->master, 6U);
-    *is_target = false;
-    return true;
-}
-
 static bool state_is_valid(const espdrop_awdl_tx_state_t *state)
 {
     return state != NULL && !mac_is_zero(state->self) &&

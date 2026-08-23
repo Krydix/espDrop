@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "OWL-compatible direct peer mapping and AirDrop endpoint discovery",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "channel": 6,
+    "transmitWindowSeconds": 15,
+    "windowLimit": 14,
+    "normalBuildTransmitEnabled": false
+  },
+  "sourceModel": {
+    "reference": "seemoo-lab/owl da255a70f221784c836d943dd3f243bc798f223b",
+    "peerValidity": "received MIF plus nonzero Version-TLV version and device class",
+    "neighborMapping": "RFC4291 link-local IPv6 derived from source MAC and inserted directly",
+    "ndpAdmissionRequired": false,
+    "topMasterAdmissionRequired": false
+  },
+  "selectedPeer": {
+    "mac": "a6:ed:54:02:5b:4e",
+    "ipv6": "fe80::a4ed:54ff:fe02:5b4e",
+    "airdropAdvertiser": true,
+    "observedElectionDistance": 0
+  },
+  "airdropEndpoint": {
+    "instance": "9df4fc4f18c2._airdrop._tcp.local",
+    "host": "308235b7-037e-431f-bce3-1fb6ef624237.local",
+    "ipv6": "fe80::a4ed:54ff:fe02:5b4e",
+    "port": 8770,
+    "completeServices": 1
+  },
+  "summary": {
+    "actionRadioSuccess": 14,
+    "actionRadioFailed": 0,
+    "dataRadioSuccess": 19,
+    "dataRadioFailed": 0,
+    "netifTxObserved": 19,
+    "netifTxSubmitted": 19,
+    "netifRxInjected": 6,
+    "netifRxDropped": 0,
+    "mdnsQueries": 5,
+    "mdnsResponsePackets": 6,
+    "peerMappings": 2,
+    "peerMappingFailures": 0,
+    "neighborAdvertisements": 0,
+    "echoReplies": 0,
+    "tcpAttempts": 1,
+    "tcpConnected": 0,
+    "tcpError": 116
+  },
+  "result": {
+    "confirmed": "OWL-valid MIF peers can be mapped directly without NDP or master admission. Bidirectional AWDL IPv6 UDP and complete AirDrop DNS-SD endpoint reconstruction succeeded in the same bounded session.",
+    "notConfirmed": "The TCP connection to the exact advertised AirDrop endpoint timed out; TLS and file transfer were not attempted.",
+    "nextFocus": "Inspect and correct the TCP SYN transmit/reply path to the exact scoped endpoint while retaining the direct OWL peer model."
+  }
+}

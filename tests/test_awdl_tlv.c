@@ -111,6 +111,10 @@ int main(void)
     length += append_tlv(tlvs + length, ESPDROP_AWDL_TLV_CHANNEL_SEQUENCE,
                          standalone_sequence, sizeof(standalone_sequence));
 
+    const uint8_t version[2] = {0xa0, 1};
+    length += append_tlv(tlvs + length, ESPDROP_AWDL_TLV_VERSION,
+                         version, sizeof(version));
+
     const espdrop_awdl_action_t action = {
         .version = 0x10,
         .subtype = ESPDROP_AWDL_ACTION_MIF,
@@ -119,7 +123,7 @@ int main(void)
     };
     espdrop_awdl_mif_t mif;
     assert(espdrop_awdl_parse_mif(&action, &mif) == ESPDROP_AWDL_PARSE_OK);
-    assert(mif.tlv_count == 3);
+    assert(mif.tlv_count == 4);
     assert(mif.has_sync);
     assert(mif.sync.aw_period_tu == 16);
     assert(mif.sync.next_aw_sequence == 0x1234);
@@ -131,6 +135,14 @@ int main(void)
     assert(mif.election_v2.self_counter == 1001);
     assert(mif.has_channel_sequence);
     assert(mif.channel_sequence.channels[0] == 149);
+    assert(mif.has_version);
+    assert(mif.version.version == 0xa0);
+    assert(mif.version.device_class == 1);
+    assert(espdrop_awdl_mif_peer_valid(&mif));
+
+    espdrop_awdl_mif_t incomplete_peer = mif;
+    incomplete_peer.version.device_class = 0;
+    assert(!espdrop_awdl_mif_peer_valid(&incomplete_peer));
 
     espdrop_awdl_tlv_iterator_t iterator;
     espdrop_awdl_tlv_view_t view;
