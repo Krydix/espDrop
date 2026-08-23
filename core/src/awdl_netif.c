@@ -368,8 +368,12 @@ static void probe_airdrop_tcp_service(
     if (result == 0) {
         ++stats.airdrop_tls_attempts;
         espdrop_airdrop_tls_result_t tls;
+        /* A TLS flight can span several AWDL availability windows. The
+         * receiver's first handshake response has been observed near the
+         * former six-second bound, so leave enough time for our certificate
+         * flight and the receiver's Finished message. */
         const bool tls_connected = espdrop_airdrop_tls_probe(
-            socket_fd, service->target, 6000U, &tls);
+            socket_fd, service->target, 12000U, &tls);
         if (tls_connected) {
             ++stats.airdrop_tls_connected;
         }

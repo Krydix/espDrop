@@ -75,9 +75,18 @@ The Mac's raw `nc` probe to that advertised receiver had timed out immediately
 before the successful ESP run. DNS-SD resolution with the native
 `IncludeAWDL` flag did prove that the service was live, but raw TCP from `nc`
 is not a reliable AirDrop readiness gate. This result closes the AWDL TCP
-boundary. TLS and AirDrop application requests remain separate work. Compact
-evidence is in
+boundary. Compact evidence is in
 [`lab/2026-08-23-awdl-tcp-connect.json`](lab/2026-08-23-awdl-tcp-connect.json).
+
+**TLS CONFIRMED ON HARDWARE on 2026-08-24:** the same scoped AirDrop endpoint
+completed TLS 1.2 with the ESP's explicit lab-only self-signed client
+certificate. The negotiated suite was
+`TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384`; the iPhone supplied a 1,390-byte peer
+certificate. A six-second control timed out because handshake flights were
+delayed across AWDL availability windows, while the otherwise identical
+12-second probe completed. AirDrop HTTP requests remain separate work. Compact
+evidence is in
+[`lab/2026-08-24-airdrop-tls-connect.json`](lab/2026-08-24-airdrop-tls-connect.json).
 
 ## Phase 1 gates
 

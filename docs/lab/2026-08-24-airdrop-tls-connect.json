@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-24",
+  "scope": "stock-iPhone AirDrop TLS connection over the ESP32-S3 AWDL netif",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "sourceHead": "73360c2",
+    "labBinarySha256": "e7f7f10b366886b4595fe3b7dc96b4ff334da6412046275ded636d879eda5f8b",
+    "normalBuildTransmitEnabled": false
+  },
+  "receiver": {
+    "peerMac": "52:f4:36:b8:fd:f5",
+    "instance": "dda46cd429ce._airdrop._tcp.local",
+    "host": "a8df835d-0639-4171-abef-e9ab6aff3b61.local",
+    "ipv6": "fe80::50f4:36ff:feb8:fdf5",
+    "port": 8770,
+    "txt": "flags=111611"
+  },
+  "negativeControl": {
+    "handshakeTimeoutMs": 6000,
+    "tcpConnected": true,
+    "tlsConnected": false,
+    "tlsError": -26624,
+    "decodedError": "MBEDTLS_ERR_SSL_TIMEOUT",
+    "observation": "The receiver's TLS handshake flight arrived, but AWDL availability-window delays moved the ESP's following flight beyond the six-second deadline."
+  },
+  "successfulRun": {
+    "durationSeconds": 45,
+    "transmitWindowMs": 25000,
+    "handshakeTimeoutMs": 12000,
+    "scheduledWindows": 24,
+    "actionRadioSuccess": 24,
+    "netifTxRadioSuccess": 33,
+    "netifTxRadioFailed": 0,
+    "netifRxInjected": 35,
+    "netifRxDropped": 3,
+    "mdnsQueries": 6,
+    "mdnsResponses": 15,
+    "completeAirdropServices": 3,
+    "tcpAttempts": 1,
+    "tcpConnected": 1,
+    "tcpTxSegments": 18,
+    "tcpRxSegments": 23,
+    "tlsAttempts": 1,
+    "tlsConnected": 1,
+    "tlsError": 0,
+    "tlsVersion": "TLSv1.2",
+    "cipher": "TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384",
+    "verifyFlags": 0,
+    "peerCertificatePresent": true,
+    "peerCertificateBytes": 1390
+  },
+  "result": {
+    "confirmed": "An ESP32-S3 completed TCP and TLS with a stock iPhone's dynamically advertised AirDrop receiver through espDrop's synchronized AWDL data path. The iPhone accepted the lab-only self-signed RSA client certificate and supplied its peer certificate.",
+    "notConfirmed": "No AirDrop /Discover, /Ask, /Upload, acceptance UI, or file transfer was attempted. Contacts Only identity and certificate validation are not implemented.",
+    "nextFocus": "Reuse the established TLS connection for one bounded AirDrop application request, beginning with the minimum request needed by the receiver before /Ask."
+  }
+}

@@ -44,13 +44,15 @@ session.
 
 ## Current compatibility hypotheses
 
-**IMPLEMENTED AS AN EXPLICIT LAB PROFILE:** the first TLS client uses mbedTLS
+**CONFIRMED IN AN EXPLICIT LAB PROFILE:** the first TLS client uses mbedTLS
 on the same scoped IPv6 socket that completed the AirDrop TCP proof. Following
 OpenDrop's sender behavior, it presents a self-signed client certificate and
 does not treat the receiver's self-signed certificate as a public-PKI identity.
 It records protocol version, ciphersuite, verification flags, and bounded peer
-certificate metadata. The normal firmware contains neither the lab private key
-nor the active probe. Hardware negotiation is not yet confirmed.
+certificate metadata. A stock iPhone completed TLS 1.2 with
+`TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384` and returned a 1,390-byte certificate.
+The normal firmware contains neither the lab private key nor the active probe.
+The next boundary is the first bounded AirDrop HTTP request on this connection.
 
 **REFERENCE (iOS 26 capture):** matching the TransferID between `/Ask` and
 `/Upload` was necessary for upload acceptance. The observed Apple-like upload
@@ -59,8 +61,9 @@ used chunked dvzip on a reused connection.
 **UNKNOWN:** whether the target iPhone requires dvzip for JPEG received from a
 non-Apple sender, accepts cpio, or negotiates this via metadata/flags.
 
-**UNKNOWN:** the exact minimum TLS certificate and identity behavior for an
-unauthenticated peer under current Everyone mode.
+**UNKNOWN:** which alternate TLS/certificate profiles current Everyone mode
+accepts, and the Contacts Only identity requirements. One minimum working
+Everyone-mode profile is now confirmed; it is not yet a compatibility matrix.
 
 These are captured as test dimensions. They are not silently guessed at
 runtime.

@@ -20,8 +20,9 @@ cloud service.
 > **Research status:** the ESP32-S3 has exchanged bidirectional IPv6 with a
 > stock iPhone over AWDL and completed AirDrop DNS-SD discovery through an
 > ESP-IDF socket. It reconstructed a live receiver's exact IPv6 address and
-> advertised TCP port. It does **not** yet establish the AirDrop TCP/TLS session
-> or transfer a file. See
+> advertised TCP port, completed TCP, and negotiated a certificate-bearing
+> TLS 1.2 transport using a lab-only self-signed client certificate. It does **not**
+> yet issue the AirDrop application requests or transfer a file. See
 > [the unknowns ledger](docs/unknowns.md) for evidence-backed status.
 
 ## What exists now
@@ -34,6 +35,8 @@ cloud service.
   link-local/MAC neighbor mapping inserted directly into lwIP (no NDP gate)
 - a hardware-proven raw IPv6 round trip with a stock iPhone: its directed
   Neighbor Advertisement and matching Echo Reply were decoded on the S3
+- a hardware-proven TLS 1.2 session to a stock iPhone's AirDrop endpoint,
+  isolated behind an explicit bounded lab profile
 - verbatim preservation of a peer's modern 16-slot AWDL channel sequence
 - bounded ephemeral BLE/AWDL/AirDrop peer model
 - TapDrop scoring based on timing, appearance, cross-layer observation, and
