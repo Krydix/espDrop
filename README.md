@@ -21,8 +21,10 @@ cloud service.
 > stock iPhone over AWDL and completed AirDrop DNS-SD discovery through an
 > ESP-IDF socket. It reconstructed a live receiver's exact IPv6 address and
 > advertised TCP port, completed TCP, and negotiated a certificate-bearing
-> TLS 1.2 transport using a lab-only self-signed client certificate. It does **not**
-> yet issue the AirDrop application requests or transfer a file. See
+> TLS 1.2 transport using a lab-only self-signed client certificate. It then
+> sent a minimum binary-plist `POST /Discover`; the iPhone returned HTTP 200
+> with a chunked response. It does **not** yet issue `/Ask`, request user
+> acceptance, or transfer a file. See
 > [the unknowns ledger](docs/unknowns.md) for evidence-backed status.
 
 ## What exists now
@@ -37,6 +39,10 @@ cloud service.
   Neighbor Advertisement and matching Echo Reply were decoded on the S3
 - a hardware-proven TLS 1.2 session to a stock iPhone's AirDrop endpoint,
   isolated behind an explicit bounded lab profile
+- a hardware-proven minimum AirDrop `/Discover` request accepted with HTTP
+  200, plus bounded Content-Length/chunked response parsing
+- host-tested `/Upload` identity, exact iOS 26 header, HTTP chunk, and dvzip
+  block framing builders; no upload is armed in firmware
 - verbatim preservation of a peer's modern 16-slot AWDL channel sequence
 - bounded ephemeral BLE/AWDL/AirDrop peer model
 - TapDrop scoring based on timing, appearance, cross-layer observation, and

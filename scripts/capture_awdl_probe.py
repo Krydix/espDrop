@@ -259,6 +259,19 @@ AIRDROP_TLS = re.compile(
     re.IGNORECASE,
 )
 
+AIRDROP_DISCOVER = re.compile(
+    r"AWDL-AIRDROP-DISCOVER instance=(?P<instance>[^ ]+) "
+    r"attempted=(?P<attempted>\d+) result=(?P<result>[^ ]+) "
+    r"error=(?P<error>-?\d+) status=(?P<status>\d+) "
+    r"request_bytes=(?P<request_bytes>\d+) "
+    r"response_bytes=(?P<response_bytes>\d+) "
+    r"body_bytes=(?P<body_bytes>\d+) bplist=(?P<bplist>\d+) "
+    r"receiver_name=(?P<receiver_name>\d+) "
+    r"chunked=(?P<chunked>\d+) type=(?P<content_type>[^ ]+) "
+    r"encoding=(?P<content_encoding>[^ ]+)",
+    re.IGNORECASE,
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -311,6 +324,7 @@ def main() -> None:
     mdns_endpoints = []
     airdrop_tcp = []
     airdrop_tls = []
+    airdrop_discover = []
     boot_lines = []
     with open_without_reset(args.port, timeout=0.25) as connection:
         if args.reset:
@@ -566,6 +580,16 @@ def main() -> None:
                     tls_probe["peer_cert_bytes"]
                 )
                 airdrop_tls.append(tls_probe)
+            discover_match = AIRDROP_DISCOVER.search(line)
+            if discover_match:
+                discover = discover_match.groupdict()
+                for key in (
+                    "attempted", "error", "status", "request_bytes",
+                    "response_bytes", "body_bytes", "bplist",
+                    "receiver_name", "chunked",
+                ):
+                    discover[key] = int(discover[key])
+                airdrop_discover.append(discover)
 
     unique_sources = sorted({item["source"] for item in frames})
     raw_captures = []
@@ -636,6 +660,7 @@ def main() -> None:
             "airdropEndpoints": mdns_endpoints,
             "airdropTcp": airdrop_tcp,
             "airdropTls": airdrop_tls,
+            "airdropDiscover": airdrop_discover,
         },
         "bootLogPrefix": boot_lines,
     }

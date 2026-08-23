@@ -368,12 +368,14 @@ static void probe_airdrop_tcp_service(
     if (result == 0) {
         ++stats.airdrop_tls_attempts;
         espdrop_airdrop_tls_result_t tls;
+        espdrop_airdrop_discover_result_t discover;
         /* A TLS flight can span several AWDL availability windows. The
          * receiver's first handshake response has been observed near the
          * former six-second bound, so leave enough time for our certificate
          * flight and the receiver's Finished message. */
-        const bool tls_connected = espdrop_airdrop_tls_probe(
-            socket_fd, service->target, 12000U, &tls);
+        const bool tls_connected = espdrop_airdrop_tls_discover_probe(
+            socket_fd, service->target, service->port, 12000U, 8000U,
+            &tls, &discover);
         if (tls_connected) {
             ++stats.airdrop_tls_connected;
         }
@@ -387,6 +389,33 @@ static void probe_airdrop_tcp_service(
                  (unsigned long)tls.verify_flags,
                  tls.peer_certificate_present ? 1U : 0U,
                  (unsigned)tls.peer_certificate_bytes);
+        if (discover.attempted) {
+            ++stats.airdrop_discover_attempts;
+        }
+        if (discover.response_complete) {
+            ++stats.airdrop_discover_responses;
+        }
+        const bool discover_accepted =
+            discover.response_complete && discover.http_status == 200U;
+        if (discover_accepted) {
+            ++stats.airdrop_discover_accepted;
+        }
+        ESP_LOGW(TAG,
+                 "AWDL-AIRDROP-DISCOVER instance=%s attempted=%u "
+                 "result=%s error=%d status=%u request_bytes=%u "
+                 "response_bytes=%u body_bytes=%u bplist=%u "
+                 "receiver_name=%u chunked=%u type=%s encoding=%s",
+                 service->instance, discover.attempted ? 1U : 0U,
+                 discover_accepted ? "accepted" :
+                     (discover.response_complete ? "rejected" : "failed"),
+                 discover.error, discover.http_status,
+                 (unsigned)discover.request_bytes,
+                 (unsigned)discover.response_bytes,
+                 (unsigned)discover.body_bytes,
+                 discover.binary_plist ? 1U : 0U,
+                 discover.receiver_computer_name_key ? 1U : 0U,
+                 discover.chunked ? 1U : 0U,
+                 discover.content_type, discover.content_encoding);
     }
 #endif
     close(socket_fd);

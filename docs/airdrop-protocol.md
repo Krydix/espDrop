@@ -1,6 +1,6 @@
 # AirDrop protocol baseline
 
-Status date: 2026-08-23.
+Status date: 2026-08-24.
 
 Labels used throughout the research notes:
 
@@ -51,6 +51,14 @@ zlib-compressed blocks containing an ODC cpio archive.
 The iOS 26 observations are inputs to a compatibility fixture, not universal
 protocol truths. espDrop must retain raw captures and gate behavior by observed
 peer behavior rather than a hard-coded OS version.
+
+**CONFIRMED on the espDrop S3 test target:** a minimum Everyone-mode binary
+plist `POST /Discover`, modelled on OpenDrop's sender, received `HTTP 200` from
+the stock iPhone over the already-proven AWDL/TLS path. The response used
+chunked framing. The first run established HTTP acceptance but preceded the
+chunk decoder, so its response plist fields remain unclaimed; subsequent runs
+missed the receiver's TCP availability window. Compact evidence is in
+[`lab/2026-08-24-airdrop-discover.json`](lab/2026-08-24-airdrop-discover.json).
 
 ## Identity and discoverability
 

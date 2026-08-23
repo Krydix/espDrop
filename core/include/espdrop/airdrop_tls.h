@@ -21,6 +21,21 @@ typedef struct {
     char ciphersuite[ESPDROP_AIRDROP_TLS_CIPHER_BYTES];
 } espdrop_airdrop_tls_result_t;
 
+typedef struct {
+    bool attempted;
+    bool response_complete;
+    int error;
+    unsigned http_status;
+    size_t request_bytes;
+    size_t response_bytes;
+    size_t body_bytes;
+    bool binary_plist;
+    bool receiver_computer_name_key;
+    bool chunked;
+    char content_type[48];
+    char content_encoding[24];
+} espdrop_airdrop_discover_result_t;
+
 /* Perform one bounded TLS client handshake on an already-connected socket.
  * The lab profile mirrors OpenDrop's Everyone-mode behavior: present a
  * self-signed client certificate and accept the receiver's self-signed
@@ -30,6 +45,17 @@ bool espdrop_airdrop_tls_probe(
     const char *server_name,
     uint32_t timeout_ms,
     espdrop_airdrop_tls_result_t *result);
+
+/* Establish TLS and, on that same connection, issue exactly one minimum
+ * Everyone-mode POST /Discover request. No /Ask or /Upload is sent. */
+bool espdrop_airdrop_tls_discover_probe(
+    int socket_fd,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t handshake_timeout_ms,
+    uint32_t discover_timeout_ms,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_discover_result_t *discover_result);
 
 #ifdef __cplusplus
 }

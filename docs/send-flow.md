@@ -52,11 +52,22 @@ It records protocol version, ciphersuite, verification flags, and bounded peer
 certificate metadata. A stock iPhone completed TLS 1.2 with
 `TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384` and returned a 1,390-byte certificate.
 The normal firmware contains neither the lab private key nor the active probe.
-The next boundary is the first bounded AirDrop HTTP request on this connection.
+The same lab path then sent OpenDrop's minimum empty binary-plist `/Discover`;
+the iPhone returned `HTTP 200` with a chunked response. This proves application
+request acceptance. The next live boundary is `/Ask`, not `/Upload`.
 
 **REFERENCE (iOS 26 capture):** matching the TransferID between `/Ask` and
 `/Upload` was necessary for upload acceptance. The observed Apple-like upload
 used chunked dvzip on a reused connection.
+
+**IMPLEMENTED AS A HOST/BUILD FIXTURE, NOT ARMED:** the core validates the
+observed upper-case UUID, URL-safe pseudonym, and upper-case push-token shapes;
+builds the exact minimal `/Upload` header order without `Host` or
+`Accept-Encoding`; and builds bounded HTTP chunk and dvzip block headers. Unit
+tests pin the successful iOS 26 capture shape and the 128 KiB stored-block
+boundary. The missing live prerequisites are the `/Ask` binary plist, explicit
+user acceptance, ODC cpio streaming, and a transfer-scoped state machine that
+guarantees the accepted `TransferID` is reused.
 
 **UNKNOWN:** whether the target iPhone requires dvzip for JPEG received from a
 non-Apple sender, accepts cpio, or negotiates this via metadata/flags.

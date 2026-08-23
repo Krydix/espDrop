@@ -135,6 +135,18 @@ test:
 	@"$(BUILD_DIR)/host-tests/test_awdl_data"
 	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
 		-I"$(ROOT_DIR)/core/include" \
+		"$(ROOT_DIR)/core/src/airdrop_http.c" \
+		"$(ROOT_DIR)/tests/test_airdrop_http.c" \
+		-o "$(BUILD_DIR)/host-tests/test_airdrop_http"
+	@"$(BUILD_DIR)/host-tests/test_airdrop_http"
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
+		-I"$(ROOT_DIR)/core/include" \
+		"$(ROOT_DIR)/core/src/airdrop_upload.c" \
+		"$(ROOT_DIR)/tests/test_airdrop_upload.c" \
+		-o "$(BUILD_DIR)/host-tests/test_airdrop_upload"
+	@"$(BUILD_DIR)/host-tests/test_airdrop_upload"
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
+		-I"$(ROOT_DIR)/core/include" \
 		"$(ROOT_DIR)/core/src/airdrop_mdns.c" \
 		"$(ROOT_DIR)/tests/test_airdrop_mdns.c" \
 		-o "$(BUILD_DIR)/host-tests/test_airdrop_mdns"

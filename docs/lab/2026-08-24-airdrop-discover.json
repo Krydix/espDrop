@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-24",
+  "scope": "minimum Everyone-mode AirDrop /Discover from ESP32-S3 to a stock iPhone",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "baseHead": "151545f",
+    "normalBuildTransmitEnabled": false
+  },
+  "receiver": {
+    "peerMac": "52:f4:36:b8:fd:f5",
+    "instance": "75074c855add._airdrop._tcp.local",
+    "host": "8fa64ef4-6845-4fe9-be92-2335207de5ff.local",
+    "ipv6": "fe80::50f4:36ff:feb8:fdf5",
+    "port": 8770
+  },
+  "request": {
+    "method": "POST",
+    "path": "/Discover",
+    "body": "42-byte binary plist containing an empty dictionary",
+    "senderRecordDataPresent": false,
+    "requestBytes": 306,
+    "bounded": true
+  },
+  "successfulRun": {
+    "tcpConnected": true,
+    "tlsConnected": true,
+    "httpStatus": 200,
+    "responseBytes": 1523,
+    "transferEncoding": "chunked",
+    "responseCompleteInThatFirmware": false,
+    "parserError": -26624,
+    "parserErrorMeaning": "The initial bounded parser waited for connection close because chunked decoding had not yet been implemented."
+  },
+  "followUp": {
+    "chunkedParserImplemented": true,
+    "hostFixtureSplitsReceiverComputerNameAcrossChunks": true,
+    "hostTestsPassed": true,
+    "esp32s3BuildPassed": true,
+    "liveSemanticRerunCompleted": false,
+    "reason": "Later bounded attempts observed the receiver too late or missed its TCP acceptance window."
+  },
+  "result": {
+    "confirmed": "The stock iPhone accepted espDrop's minimum /Discover request over the ESP32-S3 AWDL/TLS path and returned HTTP 200 with a chunked response.",
+    "notConfirmed": "The returned plist fields, /Ask, user acceptance, /Upload, and file delivery are not yet proven.",
+    "nextFocus": "Build and validate one bounded /Ask binary plist carrying a transfer ID, then require explicit acceptance before any upload is armed."
+  }
+}

@@ -384,7 +384,9 @@ static void lab_tx_task(void *argument)
              "mdns_responses=%lu mdns_services=%lu "
              "mdns_complete_services=%lu airdrop_tcp_attempts=%lu "
              "airdrop_tcp_connected=%lu airdrop_tls_attempts=%lu "
-             "airdrop_tls_connected=%lu peer_mappings=%lu "
+             "airdrop_tls_connected=%lu airdrop_discover_attempts=%lu "
+             "airdrop_discover_responses=%lu "
+             "airdrop_discover_accepted=%lu peer_mappings=%lu "
              "peer_mapping_failures=%lu tcp_tx_segments=%lu "
              "tcp_tx_syn=%lu tcp_tx_radio_success=%lu "
              "tcp_tx_radio_failed=%lu tcp_rx_segments=%lu "
@@ -420,6 +422,9 @@ static void lab_tx_task(void *argument)
              (unsigned long)netif.airdrop_tcp_connected,
              (unsigned long)netif.airdrop_tls_attempts,
              (unsigned long)netif.airdrop_tls_connected,
+             (unsigned long)netif.airdrop_discover_attempts,
+             (unsigned long)netif.airdrop_discover_responses,
+             (unsigned long)netif.airdrop_discover_accepted,
              (unsigned long)netif.peer_mappings,
              (unsigned long)netif.peer_mapping_failures,
              (unsigned long)netif.tcp_tx_segments,
