@@ -32,6 +32,7 @@ typedef struct {
     int8_t rssi;
     uint8_t channel;
     uint32_t timestamp_us;
+    uint64_t received_at_us;
     bool sampled_action;
     bool decoded_awdl;
     bool directed_to_self;
@@ -106,6 +107,8 @@ static volatile uint32_t neighbor_advertisements;
 static volatile uint32_t echo_replies;
 static uint8_t sampled_mif_sources[AWDL_CAPTURE_PEERS][6];
 static size_t sampled_mif_source_count;
+static uint8_t detailed_mif_sources[AWDL_CAPTURE_PEERS][6];
+static size_t detailed_mif_source_count;
 static uint8_t station_mac[6];
 
 static const uint8_t diagnostic_apple_oui[3] = {0x00, 0x17, 0xf2};
@@ -259,6 +262,7 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
         .rssi = packet->rx_ctrl.rssi,
         .channel = packet->rx_ctrl.channel,
         .timestamp_us = packet->rx_ctrl.timestamp,
+        .received_at_us = (uint64_t)esp_timer_get_time(),
         .sampled_action = candidate_number <= 10U,
     };
     memcpy(record.source, frame + 10, sizeof(record.source));
@@ -457,6 +461,21 @@ static void log_raw_capture(const awdl_mif_capture_t *capture)
     }
 }
 
+static bool should_log_mif_detail(const uint8_t source[6])
+{
+    for (size_t index = 0U; index < detailed_mif_source_count; ++index) {
+        if (memcmp(detailed_mif_sources[index], source, 6U) == 0) {
+            return false;
+        }
+    }
+    if (detailed_mif_source_count >= AWDL_CAPTURE_PEERS) {
+        return false;
+    }
+    memcpy(detailed_mif_sources[detailed_mif_source_count], source, 6U);
+    ++detailed_mif_source_count;
+    return true;
+}
+
 static void process_mif_capture(const awdl_mif_capture_t *capture)
 {
     espdrop_awdl_action_t action;
@@ -466,16 +485,21 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
                                    capture->captured_length, &action)) {
         result = espdrop_awdl_parse_mif(&action, &mif);
     }
-    ESP_LOGI(TAG,
-             "MIF-PARSE src=%02x:%02x:%02x:%02x:%02x:%02x result=%d "
-             "tlvs=%u sync=%u election1=%u election2=%u chanseq=%u",
-             capture->source[0], capture->source[1], capture->source[2],
-             capture->source[3], capture->source[4], capture->source[5],
-             result, result == ESPDROP_AWDL_PARSE_OK ? mif.tlv_count : 0U,
-             result == ESPDROP_AWDL_PARSE_OK && mif.has_sync,
-             result == ESPDROP_AWDL_PARSE_OK && mif.has_election_v1,
-             result == ESPDROP_AWDL_PARSE_OK && mif.has_election_v2,
-             result == ESPDROP_AWDL_PARSE_OK && mif.has_channel_sequence);
+    const bool detailed = should_log_mif_detail(capture->source);
+    if (detailed || result != ESPDROP_AWDL_PARSE_OK) {
+        ESP_LOGI(TAG,
+                 "MIF-PARSE src=%02x:%02x:%02x:%02x:%02x:%02x result=%d "
+                 "tlvs=%u sync=%u election1=%u election2=%u chanseq=%u",
+                 capture->source[0], capture->source[1], capture->source[2],
+                 capture->source[3], capture->source[4], capture->source[5],
+                 result,
+                 result == ESPDROP_AWDL_PARSE_OK ? mif.tlv_count : 0U,
+                 result == ESPDROP_AWDL_PARSE_OK && mif.has_sync,
+                 result == ESPDROP_AWDL_PARSE_OK && mif.has_election_v1,
+                 result == ESPDROP_AWDL_PARSE_OK && mif.has_election_v2,
+                 result == ESPDROP_AWDL_PARSE_OK &&
+                     mif.has_channel_sequence);
+    }
     if (result != ESPDROP_AWDL_PARSE_OK) {
         log_raw_capture(capture);
         return;
@@ -483,6 +507,9 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
     espdrop_awdl_tx_lab_observe_mif(&action, &mif,
                                     capture->received_at_us);
     apply_mif_to_peer(capture->source, &action, &mif);
+    if (!detailed) {
+        return;
+    }
     if (mif.has_sync) {
         ESP_LOGI(TAG,
                  "MIF-SYNC src=%02x:%02x:%02x:%02x:%02x:%02x "
@@ -568,6 +595,8 @@ static void probe_log_task(void *argument)
                          record.decoded_awdl ? 1U : 0U);
             }
             if (record.decoded_awdl) {
+                espdrop_awdl_tx_lab_note_peer_seen(
+                    record.source, record.received_at_us);
                 if (record.directed_to_self) {
                     espdrop_awdl_tx_lab_note_directed_peer(record.source);
                 }

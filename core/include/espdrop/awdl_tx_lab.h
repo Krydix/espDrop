@@ -24,6 +24,10 @@ void espdrop_awdl_tx_lab_observe_mif(
     const espdrop_awdl_mif_t *mif,
     uint64_t received_at_us);
 
+void espdrop_awdl_tx_lab_note_peer_seen(
+    const uint8_t source[6],
+    uint64_t received_at_us);
+
 void espdrop_awdl_tx_lab_note_directed_peer(const uint8_t source[6]);
 
 void espdrop_awdl_tx_lab_note_neighbor_advertisement(

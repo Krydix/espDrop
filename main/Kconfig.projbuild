@@ -78,6 +78,17 @@ config ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
         capture.
         Normal and web-flasher builds must leave this disabled.
 
+config ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    bool "Continuously elect the AWDL synchronization parent"
+    depends on ESPDROP_AWDL_TX_LAB
+    default y
+    help
+        Track fresh MIFs from all observed peers and continuously select the
+        synchronization parent using the OWL election algorithm. The selected
+        parent's timing and channel sequence replace the fixed schedule-source
+        override. Normal and web-flasher builds never transmit regardless of
+        this setting.
+
 config TAPDROP_NFC_FIELD_GPIO
     int "NFC field-detect GPIO (-1 disables hardware input)"
     range -1 48

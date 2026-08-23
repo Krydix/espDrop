@@ -184,6 +184,14 @@ TX_TOPOLOGY = re.compile(
     re.IGNORECASE,
 )
 
+TX_ELECTION = re.compile(
+    r"TX-LAB-ELECTION self=(?P<self>[0-9a-f:]+) "
+    r"sync=(?P<sync>[0-9a-f:]+) master=(?P<master>[0-9a-f:]+) "
+    r"distance=(?P<distance>\d+) metric=(?P<metric>\d+) "
+    r"counter=(?P<counter>\d+) peers=(?P<peers>\d+)",
+    re.IGNORECASE,
+)
+
 NETIF_READY = re.compile(
     r"AWDL-NETIF ready if=(?P<interface>\d+) "
     r"ipv6=(?P<ipv6>[^ ]+) mtu=(?P<mtu>\d+)",
@@ -270,6 +278,7 @@ def main() -> None:
     tx_admission = None
     tx_topology_waits = []
     tx_topology = None
+    tx_elections = []
     tx_reactions = []
     tx_neighbor_solicitations = []
     tx_neighbor_advertisements = []
@@ -365,6 +374,12 @@ def main() -> None:
                 tx_topology["observed_distance"] = int(
                     tx_topology["observed_distance"]
                 )
+            tx_election_match = TX_ELECTION.search(line)
+            if tx_election_match:
+                election = tx_election_match.groupdict()
+                for key in ("distance", "metric", "counter", "peers"):
+                    election[key] = int(election[key])
+                tx_elections.append(election)
             tx_ns_match = TX_NS.search(line)
             if tx_ns_match:
                 solicitation = tx_ns_match.groupdict()
@@ -501,6 +516,7 @@ def main() -> None:
             "admission": tx_admission,
             "topologyWaits": tx_topology_waits,
             "topology": tx_topology,
+            "elections": tx_elections,
             "reactions": tx_reactions,
             "neighborSolicitations": tx_neighbor_solicitations,
             "neighborAdvertisements": tx_neighbor_advertisements,

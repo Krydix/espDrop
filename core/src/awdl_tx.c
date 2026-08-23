@@ -113,8 +113,7 @@ bool espdrop_awdl_tx_state_from_mif(
     memset(state, 0, sizeof(*state));
     memcpy(state->self, self, sizeof(state->self));
     memcpy(state->master, mif->election_v2.master, sizeof(state->master));
-    memcpy(state->sync_master, mif->election_v2.sync_master,
-           sizeof(state->sync_master));
+    memcpy(state->sync_master, source, sizeof(state->sync_master));
     (void)strncpy(state->name, name, sizeof(state->name) - 1U);
     state->sync_reference_us = observation_us >= elapsed_us
                                    ? observation_us - elapsed_us : 0U;
@@ -152,10 +151,32 @@ bool espdrop_awdl_tx_state_from_mif(
     state->distance_to_master =
         mif->election_v2.distance_to_master + 1U;
     state->master_metric = mif->election_v2.master_metric;
-    state->self_metric = mif->election_v2.master_metric > 1U
-                             ? mif->election_v2.master_metric - 1U : 0U;
+    state->self_metric = ESPDROP_AWDL_ELECTION_METRIC_INITIAL;
     state->master_counter = mif->election_v2.master_counter;
-    state->self_counter = 0U;
+    state->self_counter = ESPDROP_AWDL_ELECTION_COUNTER_INITIAL;
+    return true;
+}
+
+bool espdrop_awdl_tx_state_apply_election(
+    espdrop_awdl_tx_state_t *state,
+    const espdrop_awdl_election_state_t *election)
+{
+    if (state == NULL || election == NULL ||
+        memcmp(state->self, election->self, sizeof(state->self)) != 0 ||
+        mac_is_zero(election->master) ||
+        mac_is_zero(election->sync_master) ||
+        election->distance_to_master >
+            ESPDROP_AWDL_ELECTION_TREE_MAX_HEIGHT) {
+        return false;
+    }
+    memcpy(state->master, election->master, sizeof(state->master));
+    memcpy(state->sync_master, election->sync_master,
+           sizeof(state->sync_master));
+    state->distance_to_master = election->distance_to_master;
+    state->master_metric = election->master_metric;
+    state->self_metric = election->self_metric;
+    state->master_counter = election->master_counter;
+    state->self_counter = election->self_counter;
     return true;
 }
 
@@ -206,7 +227,8 @@ bool espdrop_awdl_next_channel_window_us(
 static bool state_is_valid(const espdrop_awdl_tx_state_t *state)
 {
     return state != NULL && !mac_is_zero(state->self) &&
-           !mac_is_zero(state->master) && state->aw_period_tu != 0U &&
+           !mac_is_zero(state->master) &&
+           !mac_is_zero(state->sync_master) && state->aw_period_tu != 0U &&
            state->presence_mode != 0U &&
            state->presence_mode <= ESPDROP_AWDL_MAX_CHANNELS &&
            state->peer_channel_count == ESPDROP_AWDL_MAX_CHANNELS &&

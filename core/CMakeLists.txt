@@ -6,6 +6,7 @@ idf_component_register(
         "src/awdl_netif.c"
         "src/airdrop_mdns.c"
         "src/awdl_tlv.c"
+        "src/awdl_election.c"
         "src/awdl_tx.c"
         "src/awdl_tx_lab.c"
         "src/awdl_probe.c"

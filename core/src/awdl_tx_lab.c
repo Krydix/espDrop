@@ -9,9 +9,10 @@
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
-#include "espdrop/awdl_tx.h"
 #include "espdrop/awdl_data.h"
+#include "espdrop/awdl_election.h"
 #include "espdrop/awdl_netif.h"
+#include "espdrop/awdl_tx.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -31,11 +32,22 @@
 #define AWDL_TX_LAB_AWDL_SEQUENCE_OFFSET 34U
 #define AWDL_TX_LAB_ECHO_SEQUENCE_MARKER 0x4000U
 #define AWDL_TX_LAB_ECHO_IDENTIFIER 0xed01U
+#define AWDL_TX_LAB_ELECTION_PEERS ESPDROP_AWDL_ELECTION_MAX_PEERS
+#define AWDL_TX_LAB_FIXED_CHANNEL_PEER_TIMEOUT_US 5000000ULL
 
 #if CONFIG_ESPDROP_AWDL_TX_LAB
 static const char *TAG = "awdl_tx_lab";
 static SemaphoreHandle_t state_lock;
 static espdrop_awdl_tx_state_t tx_state;
+static espdrop_awdl_election_t election;
+typedef struct {
+    bool valid;
+    uint8_t source[6];
+    uint32_t peer_phy_tx;
+    uint64_t received_at_us;
+    espdrop_awdl_mif_t mif;
+} awdl_lab_peer_mif_t;
+static awdl_lab_peer_mif_t peer_mifs[AWDL_TX_LAB_ELECTION_PEERS];
 static uint8_t station_mac[6];
 static uint8_t target_mac[6];
 static bool has_target_mac;
@@ -62,7 +74,106 @@ static volatile uint32_t echo_radio_completed;
 static volatile uint32_t echo_radio_success;
 static volatile uint32_t echo_radio_failed;
 static volatile uint32_t unknown_data_radio_completed;
+#if !CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION && \
+    CONFIG_ESPDROP_AWDL_LAB_REQUIRE_DISTANCE_ZERO
 static uint32_t topology_waits;
+#endif
+
+static awdl_lab_peer_mif_t *find_peer_mif(const uint8_t source[6])
+{
+    for (size_t index = 0U; index < AWDL_TX_LAB_ELECTION_PEERS; ++index) {
+        if (peer_mifs[index].valid &&
+            memcmp(peer_mifs[index].source, source, 6U) == 0) {
+            return &peer_mifs[index];
+        }
+    }
+    return NULL;
+}
+
+static awdl_lab_peer_mif_t *store_peer_mif(
+    const espdrop_awdl_action_t *action,
+    const espdrop_awdl_mif_t *mif,
+    uint64_t received_at_us)
+{
+    awdl_lab_peer_mif_t *entry = find_peer_mif(action->source);
+    awdl_lab_peer_mif_t *oldest = &peer_mifs[0];
+    if (entry == NULL) {
+        for (size_t index = 0U; index < AWDL_TX_LAB_ELECTION_PEERS; ++index) {
+            if (!peer_mifs[index].valid) {
+                entry = &peer_mifs[index];
+                break;
+            }
+            if (peer_mifs[index].received_at_us < oldest->received_at_us) {
+                oldest = &peer_mifs[index];
+            }
+        }
+    }
+    if (entry == NULL) {
+        entry = oldest;
+    }
+    entry->valid = true;
+    memcpy(entry->source, action->source, sizeof(entry->source));
+    entry->peer_phy_tx = action->phy_tx;
+    entry->received_at_us = received_at_us;
+    entry->mif = *mif;
+    return entry;
+}
+
+static bool dynamic_election_candidate(
+    const espdrop_awdl_action_t *action,
+    const espdrop_awdl_mif_t *mif,
+    uint64_t received_at_us,
+    espdrop_awdl_tx_state_t *candidate)
+{
+#if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    if (!mif->has_election_v2 ||
+        store_peer_mif(action, mif, received_at_us) == NULL) {
+        return false;
+    }
+    bool changed = false;
+    if (!espdrop_awdl_election_observe(
+            &election, action->source, &mif->election_v2,
+            received_at_us, &changed)) {
+        return false;
+    }
+    const espdrop_awdl_election_state_t *elected =
+        espdrop_awdl_election_state(&election);
+    if (changed) {
+        ESP_LOGW(TAG,
+                 "TX-LAB-ELECTION self=%02x:%02x:%02x:%02x:%02x:%02x "
+                 "sync=%02x:%02x:%02x:%02x:%02x:%02x "
+                 "master=%02x:%02x:%02x:%02x:%02x:%02x "
+                 "distance=%lu metric=%lu counter=%lu peers=%u",
+                 elected->self[0], elected->self[1], elected->self[2],
+                 elected->self[3], elected->self[4], elected->self[5],
+                 elected->sync_master[0], elected->sync_master[1],
+                 elected->sync_master[2], elected->sync_master[3],
+                 elected->sync_master[4], elected->sync_master[5],
+                 elected->master[0], elected->master[1], elected->master[2],
+                 elected->master[3], elected->master[4], elected->master[5],
+                 (unsigned long)elected->distance_to_master,
+                 (unsigned long)elected->master_metric,
+                 (unsigned long)elected->master_counter,
+                 (unsigned)election.peer_count);
+    }
+    const awdl_lab_peer_mif_t *sync_mif =
+        find_peer_mif(elected->sync_master);
+    if (sync_mif == NULL ||
+        !espdrop_awdl_tx_state_from_mif(
+            candidate, station_mac, sync_mif->source, device_name,
+            sync_mif->peer_phy_tx, &sync_mif->mif,
+            sync_mif->received_at_us)) {
+        return false;
+    }
+    return espdrop_awdl_tx_state_apply_election(candidate, elected);
+#else
+    (void)action;
+    (void)mif;
+    (void)received_at_us;
+    (void)candidate;
+    return false;
+#endif
+}
 
 static bool source_is_selected_peer(const uint8_t source[6])
 {
@@ -429,6 +540,15 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
     }
     ESP_RETURN_ON_ERROR(esp_wifi_get_mac(WIFI_IF_STA, station_mac), TAG,
                         "read station MAC");
+#if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    if (!espdrop_awdl_election_init(&election, station_mac)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!espdrop_awdl_election_set_peer_timeout(
+            &election, AWDL_TX_LAB_FIXED_CHANNEL_PEER_TIMEOUT_US)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+#endif
     has_target_mac = parse_mac(CONFIG_ESPDROP_AWDL_LAB_TARGET_MAC,
                                target_mac);
     has_schedule_mac = parse_mac(CONFIG_ESPDROP_AWDL_LAB_SCHEDULE_MAC,
@@ -449,12 +569,18 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
                  target_mac[0], target_mac[1], target_mac[2], target_mac[3],
                  target_mac[4], target_mac[5]);
     }
-    if (has_schedule_mac) {
+    if (has_schedule_mac && !CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION) {
         ESP_LOGW(TAG,
                  "lab schedule-source=%02x:%02x:%02x:%02x:%02x:%02x",
                  schedule_mac[0], schedule_mac[1], schedule_mac[2],
                  schedule_mac[3], schedule_mac[4], schedule_mac[5]);
     }
+#if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    ESP_LOGW(TAG,
+             "dynamic election enabled; tracking all fresh MIF peers "
+             "with fixed-channel timeout=%llu us",
+             AWDL_TX_LAB_FIXED_CHANNEL_PEER_TIMEOUT_US);
+#endif
 #else
     (void)name;
 #endif
@@ -470,6 +596,7 @@ void espdrop_awdl_tx_lab_observe_mif(
     if (state_lock == NULL || action == NULL || mif == NULL) {
         return;
     }
+#if !CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
     if (has_schedule_mac &&
         memcmp(action->source, schedule_mac, sizeof(schedule_mac)) != 0) {
         return;
@@ -492,16 +619,28 @@ void espdrop_awdl_tx_lab_observe_mif(
         return;
     }
 #endif
+#endif
     espdrop_awdl_tx_state_t candidate;
+#if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    if (!dynamic_election_candidate(action, mif, received_at_us,
+                                    &candidate)) {
+        return;
+    }
+#else
     if (!espdrop_awdl_tx_state_from_mif(
             &candidate, station_mac, action->source, device_name,
             action->phy_tx, mif,
             received_at_us)) {
         return;
     }
+#endif
 
     bool start_task = false;
     xSemaphoreTake(state_lock, portMAX_DELAY);
+#if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    tx_state = candidate;
+    has_state = true;
+#else
     if (!has_state || candidate.distance_to_master <
                           tx_state.distance_to_master ||
         (candidate.distance_to_master == tx_state.distance_to_master &&
@@ -510,6 +649,7 @@ void espdrop_awdl_tx_lab_observe_mif(
         tx_state = candidate;
         has_state = true;
     }
+#endif
     if (!task_started) {
         task_started = true;
         start_task = true;
@@ -547,11 +687,28 @@ bool espdrop_awdl_tx_lab_netif_ready(void)
 #endif
 }
 
+void espdrop_awdl_tx_lab_note_peer_seen(
+    const uint8_t source[6],
+    uint64_t received_at_us)
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB && \
+    CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    (void)espdrop_awdl_election_touch(&election, source, received_at_us);
+#else
+    (void)source;
+    (void)received_at_us;
+#endif
+}
+
 bool espdrop_awdl_tx_lab_wants_mif(const uint8_t source[6])
 {
 #if CONFIG_ESPDROP_AWDL_TX_LAB
+#if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
+    return source != NULL;
+#else
     return source != NULL && has_schedule_mac &&
            memcmp(source, schedule_mac, sizeof(schedule_mac)) == 0;
+#endif
 #else
     (void)source;
     return false;

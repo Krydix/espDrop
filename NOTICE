@@ -15,6 +15,13 @@ Wireless Link project and by inspection of the GPL-3.0-or-later OpenDrop and
 OWL source trees. Any future source adapted from those projects must retain
 its upstream copyright and license notices and identify its provenance.
 
+`core/src/awdl_election.c` and
+`core/include/espdrop/awdl_election.h` adapt the election algorithm from OWL
+`src/election.c` and `src/election.h` at commit
+`da255a70f221784c836d943dd3f243bc798f223b`. They retain the Open Wireless Link
+Project and Milan Stute copyright notices and are licensed under
+GPL-3.0-or-later.
+
 archef2000/esp-owl is an important experimental ESP32-S3 reference. Its tree
 does not currently contain a repository-level license, although individual
 files carry GPL, MIT, Apache-2.0, and other notices. It is therefore kept out

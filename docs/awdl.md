@@ -199,6 +199,31 @@ the ordinary socket API, not yet AirDrop receiver discovery semantics,
 long-duration synchronization, or file transfer. Compact evidence is in
 [`lab/2026-08-23-awdl-netif-mdns.json`](lab/2026-08-23-awdl-netif-mdns.json).
 
+## Dynamic election result
+
+**CONFIRMED IN SOFTWARE AND A BOUNDED HARDWARE RUN on 2026-08-23:** espDrop
+now maintains a bounded AWDL election table derived from OWL's published GPL
+implementation. It compares top-master counter and metric, distance, and MAC
+tie-breaks; rejects cycles and over-height trees; expires peers; and keeps the
+immediate synchronization parent distinct from the elected top master. The
+transmitted MIF state is regenerated from that election instead of assuming
+that one configured peer is always the master.
+
+The retained live run tracked a newly appearing session candidate as the
+distance-zero top master and this Mac as its distance-one child. espDrop chose
+the candidate directly, followed its channel-6 windows, and radio-completed
+14/14 MIFs, 14/14 Neighbor Solicitations, and 14/14 Echo Requests. The peer
+returned no directed action or IPv6 response, so this is election and transmit
+proof—not a new admission proof.
+
+The run also exposed an ESP32-S3-specific constraint: OWL's two-second peer
+timeout assumes a radio capable of following the advertised channel sequence.
+This S3 remains on channel 6 and cannot observe 5 GHz windows, which caused
+brief false peer expiry. Every decoded PSF/MIF now refreshes peer liveness, and
+the fixed-channel lab uses a five-second timeout while the reusable election
+core retains the two-second default. The compact evidence is in
+[`lab/2026-08-23-awdl-dynamic-election.json`](lab/2026-08-23-awdl-dynamic-election.json).
+
 ## Timing model
 
 **CONFIRMED by the OWL research:** AWDL divides time into availability windows

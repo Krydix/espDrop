@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-23",
+  "scope": "OWL-derived dynamic AWDL election and synchronization-parent selection",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "channel": 6,
+    "transmitWindowSeconds": 15,
+    "normalBuildTransmitEnabled": false
+  },
+  "software": {
+    "upstream": "seemoo-lab/owl",
+    "upstreamCommit": "da255a70f221784c836d943dd3f243bc798f223b",
+    "license": "GPL-3.0-or-later",
+    "initialMetric": 60,
+    "initialCounter": 0,
+    "maximumPeers": 16,
+    "treeHeightLimit": 10,
+    "defaultPeerTimeoutMicroseconds": 2000000,
+    "fixedChannelLabTimeoutMicroseconds": 5000000,
+    "hostTestsPassed": true
+  },
+  "experiments": [
+    {
+      "name": "dynamic-election-top-master-negative-control",
+      "endpoint": "1a:55:d1:38:46:ba",
+      "endpointRole": "distance-zero top master; initially mistaken for the intended distance-one receiver",
+      "electedDistance": 1,
+      "actionRadioSuccess": 14,
+      "neighborSolicitationRadioSuccess": 14,
+      "echoRequestRadioSuccess": 14,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false
+    },
+    {
+      "name": "rotated-endpoint-absent-control",
+      "endpoint": "52:f4:36:b8:fd:f5",
+      "endpointRole": "previous distance-one AirDrop receiver address; absent before and during this run",
+      "actionRadioSuccess": 14,
+      "neighborSolicitationRadioSuccess": 0,
+      "echoRequestRadioSuccess": 0,
+      "neighborSolicitationRadioFailed": 14,
+      "echoRequestRadioFailed": 14,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "admitted": false,
+      "interpretation": "inconclusive endpoint test because the temporary address had rotated away"
+    },
+    {
+      "name": "fresh-session-candidate",
+      "endpoint": "f6:f8:0e:bc:88:5c",
+      "endpointSelection": "new stable peer appearing after the user reopened the iPhone AirDrop share sheet",
+      "endpointAdvertisedDistance": 0,
+      "endpointMaster": "f6:f8:0e:bc:88:5c",
+      "otherPeer": "ea:33:2c:82:f5:7f",
+      "otherPeerAdvertisedDistance": 1,
+      "otherPeerMaster": "f6:f8:0e:bc:88:5c",
+      "electedDistance": 1,
+      "actionRadioSuccess": 14,
+      "neighborSolicitationRadioSuccess": 14,
+      "echoRequestRadioSuccess": 14,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "directedReactions": 0,
+      "admitted": false
+    }
+  ],
+  "observations": {
+    "confirmed": [
+      "The ESP tracked multiple live MIF peers, propagated top-master counter and metric, distinguished the immediate synchronization parent from the top master, and updated transmitted election state.",
+      "PSF observations refresh known peers rather than limiting freshness to sparse MIF frames.",
+      "The fresh-session run scheduled 14 probe groups with 1-2 microseconds measured lateness and radio-completed every MIF, Neighbor Solicitation, and Echo Request."
+    ],
+    "notConfirmed": [
+      "No run in this slice produced a directed action, Neighbor Advertisement, Echo Reply, or admission event.",
+      "The intended distance-one iPhone address rotated before a valid post-election test, so distance-one admission remains unproven.",
+      "The five-second fixed-channel timeout was host-tested and built after the retained run but was not itself exercised in another active hardware run."
+    ],
+    "fixedChannelFinding": "OWL's two-second peer timeout is too short for an ESP32-S3 fixed on channel 6 when peers temporarily occupy advertised 5 GHz windows; the lab now uses five seconds while the reusable election core retains the upstream-compatible two-second default."
+  }
+}

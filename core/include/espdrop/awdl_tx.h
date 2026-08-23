@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "espdrop/awdl_election.h"
 #include "espdrop/awdl_frame.h"
 #include "espdrop/awdl_tlv.h"
 
@@ -56,6 +57,10 @@ bool espdrop_awdl_tx_state_from_mif(
     uint32_t peer_phy_tx,
     const espdrop_awdl_mif_t *mif,
     uint64_t observation_us);
+
+bool espdrop_awdl_tx_state_apply_election(
+    espdrop_awdl_tx_state_t *state,
+    const espdrop_awdl_election_state_t *election);
 
 bool espdrop_awdl_next_channel_window_us(
     const espdrop_awdl_tx_state_t *state,

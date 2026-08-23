@@ -92,6 +92,12 @@ test:
 	@"$(BUILD_DIR)/host-tests/test_tapdrop_correlation"
 	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
 		-I"$(ROOT_DIR)/core/include" \
+		"$(ROOT_DIR)/core/src/awdl_election.c" \
+		"$(ROOT_DIR)/tests/test_awdl_election.c" \
+		-o "$(BUILD_DIR)/host-tests/test_awdl_election"
+	@"$(BUILD_DIR)/host-tests/test_awdl_election"
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
+		-I"$(ROOT_DIR)/core/include" \
 		"$(ROOT_DIR)/core/src/awdl_frame.c" \
 		"$(ROOT_DIR)/tests/test_awdl_frame.c" \
 		-o "$(BUILD_DIR)/host-tests/test_awdl_frame"

@@ -67,13 +67,25 @@ These hashes are research provenance, not dependencies in release firmware.
   one directed Neighbor Advertisement, two matching Echo Replies, 20/20
   radio-successful lwIP frames, and 25 socket-level mDNS packets during the
   retained capture.
+- [x] Maintain dynamic election state from all observed MIF peers. The
+  OWL-derived bounded model selects an immediate synchronization parent,
+  propagates the top-master state, rejects loops/over-height paths, refreshes
+  known peers from every decoded action, and drives transmitted MIF state.
+  Hardware confirmed live parent/master transitions and fully scheduled radio
+  transmission. The fixed-channel lab extends peer expiry from two to five
+  seconds because the S3 cannot follow peers into their advertised 5 GHz
+  windows.
 - [ ] Admit a distance-one iPhone peer. Two bounded controls each achieved
   14/14 radio-successful NS and Echo probes with zero directed replies. The
   first followed the distance-zero master's sequence while addressing the
   iPhone. The second followed the iPhone's own sequence and corrected the
   transmitted election-v2 `sync_master` from the observed TLV. Neither model
-  was sufficient. Full election/synchronization-tree state maintenance is now
-  the leading missing behavior, not physical proximity.
+  was sufficient. Dynamic election/synchronization-tree state is now
+  implemented and hardware-tested, but the intended distance-one address
+  rotated away before the valid post-election run. A fresh session candidate
+  advertised itself at distance zero and still returned no admission evidence.
+  Distance-one admission therefore remains open, and the missing behavior is
+  likely elsewhere in peer admission or the still-minimal advertised MIF.
 - [ ] Record loss, schedule drift, heap high-water mark, and watchdog status.
 
 ## M2/M3 — AirDrop
@@ -188,9 +200,20 @@ MIF source was the master. Both variants radio-completed all 14 Neighbor
 Solicitations and all 14 Echo Requests, but the iPhone returned no Neighbor
 Advertisement or Echo Reply. Thus distance zero is an AWDL election role, not
 a proximity measurement, and simply accepting distance one is insufficient.
-The next AWDL slice must maintain the election and synchronization tree like a
-real peer; the current minimal 9-TLV bounded advertisement is not yet enough
-to join a non-master iPhone reliably.
+At that point, maintaining the election and synchronization tree like a real
+peer became the next research slice; the current minimal 9-TLV bounded
+advertisement was not enough to join a non-master iPhone reliably.
+
+The dynamic-election slice implemented that missing tree state from OWL's
+published election model and exercised it against rotating live peers. The ESP
+correctly distinguished a distance-one synchronization parent from its
+distance-zero top master in the first control, then selected a newly appearing
+distance-zero session candidate directly in the retained run. All 42 retained
+radio transmissions succeeded, but no directed response opened admission.
+The intended distance-one AirDrop address had rotated before its targeted run,
+so that run's 28 failed unicast radio completions are an absence control, not
+evidence against the election model. This leaves the richer MIF/service state
+and multi-channel limitations as the next admission research boundary.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.

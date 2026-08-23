@@ -56,7 +56,7 @@ int main(void)
     assert(memcmp(state.master, source, sizeof(source)) == 0);
     assert(state.distance_to_master == 1);
     assert(state.master_metric == 510);
-    assert(state.self_metric == 509);
+    assert(state.self_metric == ESPDROP_AWDL_ELECTION_METRIC_INITIAL);
     assert(state.channel == 6);
     assert(state.peer_channel_count == 16U);
     assert(state.peer_channel_encoding == 3U);
@@ -111,7 +111,8 @@ int main(void)
     assert(parsed.has_election_v1);
     assert(parsed.has_election_v2);
     assert(parsed.election_v2.distance_to_master == 1);
-    assert(parsed.election_v2.self_metric == 509);
+    assert(parsed.election_v2.self_metric ==
+           ESPDROP_AWDL_ELECTION_METRIC_INITIAL);
     assert(parsed.has_channel_sequence);
     assert(parsed.channel_sequence.channels[8] == 6);
     assert(parsed.channel_sequence.operating_classes[8] == 0x51U);
@@ -177,9 +178,26 @@ int main(void)
         &observed, 1000000ULL));
     assert(memcmp(state.master, distance_zero_master,
                   sizeof(distance_zero_master)) == 0);
+    assert(memcmp(state.sync_master, distance_one_peer,
+                  sizeof(distance_one_peer)) == 0);
+    assert(state.distance_to_master == 2U);
+
+    espdrop_awdl_election_state_t elected = {
+        .distance_to_master = 1U,
+        .master_metric = 510U,
+        .self_metric = ESPDROP_AWDL_ELECTION_METRIC_INITIAL,
+        .master_counter = 741U,
+        .self_counter = ESPDROP_AWDL_ELECTION_COUNTER_INITIAL,
+    };
+    memcpy(elected.self, self, sizeof(self));
+    memcpy(elected.master, distance_zero_master,
+           sizeof(distance_zero_master));
+    memcpy(elected.sync_master, distance_zero_master,
+           sizeof(distance_zero_master));
+    assert(espdrop_awdl_tx_state_apply_election(&state, &elected));
     assert(memcmp(state.sync_master, distance_zero_master,
                   sizeof(distance_zero_master)) == 0);
-    assert(state.distance_to_master == 2U);
+    assert(state.distance_to_master == 1U);
     assert(espdrop_awdl_build_action(
                frame, sizeof(frame), &length, &state,
                ESPDROP_AWDL_ACTION_MIF, 1000000ULL, 10U) ==
@@ -189,7 +207,9 @@ int main(void)
            ESPDROP_AWDL_PARSE_OK);
     assert(memcmp(parsed.election_v2.sync_master, distance_zero_master,
                   sizeof(distance_zero_master)) == 0);
-    assert(parsed.election_v2.distance_to_master == 2U);
+    assert(parsed.election_v2.distance_to_master == 1U);
+    assert(parsed.election_v2.self_metric ==
+           ESPDROP_AWDL_ELECTION_METRIC_INITIAL);
 
     puts("AWDL TX tests passed");
     return 0;
