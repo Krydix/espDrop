@@ -73,11 +73,34 @@
       "scheduledWindows": 0,
       "transmitTaskStarted": false,
       "result": "fully passive"
+    },
+    {
+      "name": "frozen-distinct-anchor-run",
+      "firmwareVersion": "0.1.0-c397ddf",
+      "captureDurationSeconds": 180,
+      "airdropTarget": "52:f4:36:b8:fd:f5",
+      "targetReportedElectionDistance": 1,
+      "frozenTopMaster": "a6:ed:54:02:5b:4e",
+      "windowStageCounts": {"anchor": 14, "target": 0},
+      "allWindowsMarkedCopresent": true,
+      "windowLatenessUs": {"minimum": 1, "maximum": 2},
+      "actionRadioSuccess": 14,
+      "actionRadioFailed": 0,
+      "neighborSolicitationRadioSuccess": 14,
+      "neighborSolicitationRadioFailed": 0,
+      "echoRequestRadioSuccess": 14,
+      "echoRequestRadioFailed": 0,
+      "anchorNeighborAdvertisements": 0,
+      "anchorEchoReplies": 0,
+      "anchorAdmitted": false,
+      "targetProbed": false,
+      "mdnsQueries": 0,
+      "qualification": "Clean test of the frozen two-stage branch. The exact top master received all 14 radio-successful probe bursts but supplied no directed admission evidence, so the gate correctly never progressed to the AirDrop child."
     }
   ],
   "result": {
-    "confirmed": "The lab can distinguish anchor and endpoint admission, select the top master first, require an exact anchor reply before progressing, bypass staging when the endpoint is itself master, and remain passive until a distinct target/anchor pair is internally consistent.",
-    "notConfirmed": "No stable distinct AirDrop-child/top-master pair occurred after the session-freeze correction, and no anchor returned admission evidence in the earlier rotating run. Anchor-first admission is therefore still an unproven hypothesis.",
-    "nextFocus": "Retain this profile for the next naturally occurring stable child topology. If the frozen top master admits but the endpoint does not, inspect child-directed admission state; if the top master does not admit, return to MIF membership semantics or the single-band channel limitation."
+    "confirmed": "The lab can distinguish anchor and endpoint admission, select and freeze a distinct top master first, require an exact anchor reply before progressing, bypass staging when the endpoint is itself master, and remain passive until the pair is internally consistent. A clean hardware run held all 14 windows on one frozen top master with complete radio success and correctly withheld all endpoint and mDNS traffic when the master did not reply.",
+    "notConfirmed": "The frozen top master returned no Neighbor Advertisement or matching Echo Reply. Top-master-first sequencing alone is therefore not sufficient to admit espDrop or reach the AirDrop child in this topology.",
+    "nextFocus": "Compare AWDL membership/Data Path semantics that may make an Apple master recognize espDrop as a joined child, while keeping the longer Apple-only infrastructure fields evidence-driven. If that path remains negative, isolate the ESP32-S3 single-band/channel limitation."
   }
 }

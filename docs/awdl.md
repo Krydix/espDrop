@@ -364,9 +364,14 @@ against the endpoint after the live election changed; none returned admission
 evidence. That run exposed the confounder and motivated session freezing. A
 130-second post-fix control observed only an AirDrop endpoint that remained top
 master, so it selected no child target, scheduled no windows, and transmitted
-nothing. The implementation and safety behavior are confirmed; anchor-first
-admission itself remains unknown until a stable distinct child/master pair is
-observed. Evidence is preserved in
+nothing. A subsequent 180-second run produced the clean condition: AirDrop
+child `52:f4:36:b8:fd:f5` at reported distance one and frozen top master
+`a6:ed:54:02:5b:4e`. All 14 guarded windows remained in the anchor stage with
+1–2 microseconds lateness, and all 14 MIFs, Neighbor Solicitations, and Echo
+Requests radio-completed. The master returned no Neighbor Advertisement or
+Echo Reply, so the gate correctly sent nothing to the child and emitted zero
+mDNS queries. This rejects top-master-first sequencing alone as the missing
+admission primitive. Evidence is preserved in
 [`lab/2026-08-23-awdl-staged-admission.json`](lab/2026-08-23-awdl-staged-admission.json).
 
 ## Timing model

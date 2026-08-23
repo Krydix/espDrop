@@ -267,9 +267,13 @@ The new bounded profile can require a distinct AirDrop child and top master,
 freeze that pair, admit only the exact master first, and remain passive if the
 topology is not internally consistent. One pre-freeze run followed a rotating
 master set and received no directed response; a 130-second post-freeze control
-never saw a qualifying pair and transmitted nothing. **UNKNOWN:** whether a
-stable top master will admit espDrop and then make its AirDrop child reachable;
-that exact hardware condition has not yet occurred after the correction.
+never saw a qualifying pair and transmitted nothing. The next run did obtain a
+stable pair: all 14 MIF/Neighbor Solicitation/Echo bursts to frozen top master
+`a6:ed:54:02:5b:4e` radio-completed, but it returned no directed admission
+evidence and the gate never touched AirDrop child `52:f4:36:b8:fd:f5`.
+Top-master-first sequencing alone is therefore rejected. **UNKNOWN:** which
+AWDL membership/Data Path semantics make an Apple master recognize a new child,
+and whether the ESP32-S3's single-band channel coverage can satisfy them.
 
 **UNKNOWN:** whether the connected iPhone was in an AirDrop discoverable state
 during the initial three-second mDNS browse; no receiver service was observed.
