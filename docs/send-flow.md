@@ -70,18 +70,37 @@ between `/Ask` and `/Upload`, used chunked dvzip, and reused the accepted TLS
 connection. This reproduces the iOS 26 reference profile; it does not yet prove
 which of those properties other receiver versions require.
 
-**IMPLEMENTED AND HARDWARE-PROVEN BEHIND AN ATTENDED LAB FLAG:** the core validates the
-observed upper-case UUID, URL-safe pseudonym, and upper-case push-token shapes;
-builds the exact minimal `/Upload` header order without `Host` or
-`Accept-Encoding`; builds a bounded ODC cpio archive and HTTP chunk/dvzip
-framing; compresses it with the ESP32-S3 ROM miniz implementation; and uploads
-only after `/Ask` returns 200. Unit tests independently parse the archive and
-round-trip its zlib/dvzip payload. The first live fixture is deliberately tiny
-and contiguous; microSD streaming and the public sender state machine remain.
+**HARDWARE-PROVEN BEHIND AN ATTENDED LAB FLAG:** the core validates the observed
+upper-case UUID, URL-safe pseudonym, and upper-case push-token shapes; builds
+the exact minimal `/Upload` header order without `Host` or `Accept-Encoding`;
+and uploads only after `/Ask` returns 200. The first successful live run used
+one contiguous 10 KiB ODC archive and one zlib-compressed dvzip block.
 
-**CONFIRMED:** the target iPhone accepts dvzip for a JPEG received from this
-non-Apple sender. Whether it also accepts bare cpio, and which containers other
-file types or receiver versions require, remains unknown.
+**IMPLEMENTED AND HARDWARE-PROVEN:** the sender accepts a declared-size source
+with short-read and optional rewind callbacks. For a seekable/spooled source,
+it streams ODC through zlib once to count the exact payload, rewinds, and then
+streams the same source into `/Upload`. The successful hardware run used a
+fixed 2 KiB source workspace, produced the same 469-byte zlib stream as the
+old contiguous implementation, received HTTP 200, and delivered `hello.jpg`.
+Neither the complete file nor archive is retained. A fixed 16 KiB network
+staging buffer coalesces producer writes, while mbedTLS submissions stay below
+the lwIP send window. Evidence is in
+[`lab/2026-08-24-airdrop-streaming-upload.json`](lab/2026-08-24-airdrop-streaming-upload.json).
+
+The stored-dvzip fallback remains host-tested for truly non-seekable sources,
+including short reads, a 180,000-byte two-block transfer, truncation, source
+failure, sink failure, CRC accounting, and independent Python archive
+reconstruction. Three live stored controls stalled without an HTTP response
+after 3,024, 5,109, and 4,438 request bytes respectively; each hit the sender's
+TLS timeout. Consequently, production relay ingress should spool to SD/flash
+and expose rewind until AWDL/TCP throughput is improved. The sender never
+blindly retries a transfer.
+
+**CONFIRMED:** the target iPhone accepts zlib-compressed dvzip produced by both
+the original contiguous sender and the new two-pass streaming sender. Stored
+dvzip did not complete within the current transport timeout, so receiver
+acceptance is still unproven. Bare cpio, other file types, and other receiver
+versions remain unknown.
 
 **UNKNOWN:** which alternate TLS/certificate profiles current Everyone mode
 accepts, and the Contacts Only identity requirements. One minimum working

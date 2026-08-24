@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "espdrop/airdrop_upload.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -58,14 +60,19 @@ typedef struct {
     bool response_complete;
     bool transfer_id_continuity;
     int error;
+    int stream_status;
     unsigned http_status;
     size_t request_bytes;
     size_t payload_bytes;
     size_t archive_bytes;
     size_t compressed_bytes;
     size_t file_bytes;
+    size_t dvzip_blocks;
+    size_t workspace_high_water;
     size_t response_bytes;
     size_t body_bytes;
+    uint32_t source_crc32;
+    bool stored_blocks;
     char transfer_id[37];
 } espdrop_airdrop_upload_result_t;
 
@@ -113,6 +120,22 @@ bool espdrop_airdrop_tls_ask_upload_probe(
     uint32_t handshake_timeout_ms,
     uint32_t ask_timeout_ms,
     uint32_t upload_timeout_ms,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_ask_result_t *ask_result,
+    espdrop_airdrop_upload_result_t *upload_result);
+
+/* Relay form of the attended probe. A source with rewind uses a constant-
+ * memory zlib sizing pass followed by the upload pass; a non-seekable source
+ * uses stored dvzip. The complete file is never retained. The call is
+ * synchronous and never retries. */
+bool espdrop_airdrop_tls_ask_upload_stream_probe(
+    int socket_fd,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t handshake_timeout_ms,
+    uint32_t ask_timeout_ms,
+    uint32_t upload_timeout_ms,
+    const espdrop_airdrop_outgoing_file_t *file,
     espdrop_airdrop_tls_result_t *tls_result,
     espdrop_airdrop_ask_result_t *ask_result,
     espdrop_airdrop_upload_result_t *upload_result);

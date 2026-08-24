@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "espdrop/airdrop_upload.h"
@@ -28,6 +29,89 @@ static bool contains_bytes(
         }
     }
     return false;
+}
+
+typedef struct {
+    const uint8_t *data;
+    size_t data_bytes;
+    size_t offset;
+    size_t max_chunk;
+    bool fail;
+} memory_source_t;
+
+static bool read_memory_source(
+    void *context,
+    uint8_t *output,
+    size_t capacity,
+    size_t *bytes_read)
+{
+    memory_source_t *source = context;
+    if (source->fail) {
+        return false;
+    }
+    size_t available = source->data_bytes - source->offset;
+    size_t bytes = available < capacity ? available : capacity;
+    if (source->max_chunk > 0U && bytes > source->max_chunk) {
+        bytes = source->max_chunk;
+    }
+    if (bytes > 0U) {
+        memcpy(output, source->data + source->offset, bytes);
+        source->offset += bytes;
+    }
+    *bytes_read = bytes;
+    return true;
+}
+
+typedef struct {
+    uint8_t *data;
+    size_t capacity;
+    size_t bytes;
+    size_t fail_after;
+} memory_sink_t;
+
+static bool write_memory_sink(
+    void *context,
+    const uint8_t *data,
+    size_t data_bytes)
+{
+    memory_sink_t *sink = context;
+    if (data_bytes > sink->capacity - sink->bytes ||
+        (sink->fail_after > 0U &&
+         sink->bytes + data_bytes > sink->fail_after)) {
+        return false;
+    }
+    memcpy(sink->data + sink->bytes, data, data_bytes);
+    sink->bytes += data_bytes;
+    return true;
+}
+
+static size_t decode_stored_dvzip(
+    const uint8_t *payload,
+    size_t payload_bytes,
+    uint8_t *archive,
+    size_t archive_capacity,
+    size_t *block_count)
+{
+    size_t input = 0U;
+    size_t output = 0U;
+    *block_count = 0U;
+    while (input < payload_bytes) {
+        assert(payload_bytes - input >= 4U);
+        const uint32_t header = (uint32_t)payload[input] << 24U |
+                                (uint32_t)payload[input + 1U] << 16U |
+                                (uint32_t)payload[input + 2U] << 8U |
+                                payload[input + 3U];
+        input += 4U;
+        assert((header & UINT32_C(0x80000000)) != 0U);
+        const size_t block_bytes = header & UINT32_C(0x7fffffff);
+        assert(block_bytes > 0U && block_bytes <= payload_bytes - input);
+        assert(block_bytes <= archive_capacity - output);
+        memcpy(archive + output, payload + input, block_bytes);
+        input += block_bytes;
+        output += block_bytes;
+        ++*block_count;
+    }
+    return output;
 }
 
 int main(int argc, char **argv)
@@ -139,10 +223,137 @@ int main(int argc, char **argv)
     assert(espdrop_airdrop_build_odc_archive(
                archive, 128U, "./hello.jpg", jpeg,
                sizeof(jpeg), 0U) == 0U);
-    if (argc == 2) {
+
+    espdrop_airdrop_stream_plan_t plan;
+    assert(espdrop_airdrop_plan_stored_dvzip(
+        &plan, "./hello.jpg", sizeof(jpeg)));
+    assert(plan.file_bytes == sizeof(jpeg));
+    assert(plan.archive_bytes == ESPDROP_AIRDROP_ODC_BLOCK_BYTES);
+    assert(plan.dvzip_blocks == 1U);
+    assert(plan.payload_bytes == ESPDROP_AIRDROP_ODC_BLOCK_BYTES + 4U);
+    uint8_t streamed[ESPDROP_AIRDROP_ODC_BLOCK_BYTES + 4U];
+    uint8_t workspace[7];
+    memory_source_t small_source = {
+        .data = jpeg,
+        .data_bytes = sizeof(jpeg),
+        .max_chunk = 3U,
+    };
+    const espdrop_airdrop_source_t source = {
+        .context = &small_source,
+        .size_bytes = sizeof(jpeg),
+        .read = read_memory_source,
+    };
+    memory_sink_t small_sink = {
+        .data = streamed,
+        .capacity = sizeof(streamed),
+    };
+    espdrop_airdrop_stream_result_t stream_result;
+    assert(espdrop_airdrop_stream_stored_dvzip(
+               &source, "./hello.jpg", 0U, workspace, sizeof(workspace),
+               write_memory_sink, &small_sink, &stream_result) ==
+           ESPDROP_AIRDROP_STREAM_OK);
+    assert(stream_result.source_bytes == sizeof(jpeg));
+    assert(stream_result.archive_bytes == plan.archive_bytes);
+    assert(stream_result.dvzip_blocks == plan.dvzip_blocks);
+    assert(stream_result.payload_bytes == plan.payload_bytes);
+    assert(stream_result.workspace_high_water == sizeof(workspace));
+    assert(stream_result.source_crc32 == UINT32_C(0xadb75530));
+    assert(streamed[0] == 0x80U && streamed[1] == 0x00U &&
+           streamed[2] == 0x28U && streamed[3] == 0x00U);
+    assert(memcmp(streamed + 4U, archive, sizeof(archive)) == 0);
+
+    const size_t large_file_bytes = 180000U;
+    uint8_t *large_file = malloc(large_file_bytes);
+    assert(large_file != NULL);
+    for (size_t index = 0U; index < large_file_bytes; ++index) {
+        large_file[index] = (uint8_t)(index * 37U + 11U);
+    }
+    assert(espdrop_airdrop_plan_stored_dvzip(
+        &plan, "./relay.bin", large_file_bytes));
+    assert(plan.dvzip_blocks == 2U);
+    uint8_t *large_payload = malloc(plan.payload_bytes);
+    uint8_t *large_archive = malloc(plan.archive_bytes);
+    assert(large_payload != NULL && large_archive != NULL);
+    memory_source_t large_source = {
+        .data = large_file,
+        .data_bytes = large_file_bytes,
+        .max_chunk = 31U,
+    };
+    espdrop_airdrop_source_t large_descriptor = {
+        .context = &large_source,
+        .size_bytes = large_file_bytes,
+        .read = read_memory_source,
+    };
+    memory_sink_t large_sink = {
+        .data = large_payload,
+        .capacity = plan.payload_bytes,
+    };
+    assert(espdrop_airdrop_stream_stored_dvzip(
+               &large_descriptor, "./relay.bin", 123U, workspace,
+               sizeof(workspace), write_memory_sink, &large_sink,
+               &stream_result) == ESPDROP_AIRDROP_STREAM_OK);
+    assert(large_sink.bytes == plan.payload_bytes);
+    size_t decoded_blocks = 0U;
+    assert(decode_stored_dvzip(
+               large_payload, large_sink.bytes, large_archive,
+               plan.archive_bytes, &decoded_blocks) == plan.archive_bytes);
+    assert(decoded_blocks == 2U);
+    assert(memcmp(large_archive, "070707", 6U) == 0);
+    assert(memcmp(large_archive + ESPDROP_AIRDROP_ODC_HEADER_BYTES,
+                  "./relay.bin\0", 12U) == 0);
+    assert(memcmp(
+        large_archive + ESPDROP_AIRDROP_ODC_HEADER_BYTES + 12U,
+        large_file, large_file_bytes) == 0);
+
+    memory_source_t truncated_source = {
+        .data = jpeg,
+        .data_bytes = sizeof(jpeg),
+    };
+    espdrop_airdrop_source_t truncated_descriptor = {
+        .context = &truncated_source,
+        .size_bytes = sizeof(jpeg) + 1U,
+        .read = read_memory_source,
+    };
+    memory_sink_t discard_sink = {
+        .data = large_payload,
+        .capacity = plan.payload_bytes,
+    };
+    assert(espdrop_airdrop_stream_stored_dvzip(
+               &truncated_descriptor, "./bad.bin", 0U, workspace,
+               sizeof(workspace), write_memory_sink, &discard_sink,
+               &stream_result) == ESPDROP_AIRDROP_STREAM_TRUNCATED);
+    memory_source_t failed_source = {.fail = true};
+    espdrop_airdrop_source_t failed_descriptor = {
+        .context = &failed_source,
+        .size_bytes = 1U,
+        .read = read_memory_source,
+    };
+    assert(espdrop_airdrop_stream_stored_dvzip(
+               &failed_descriptor, "./bad.bin", 0U, workspace,
+               sizeof(workspace), write_memory_sink, &discard_sink,
+               &stream_result) == ESPDROP_AIRDROP_STREAM_SOURCE);
+    small_source.offset = 0U;
+    small_sink.bytes = 0U;
+    small_sink.fail_after = 100U;
+    assert(espdrop_airdrop_stream_stored_dvzip(
+               &source, "./hello.jpg", 0U, workspace, sizeof(workspace),
+               write_memory_sink, &small_sink, &stream_result) ==
+           ESPDROP_AIRDROP_STREAM_SINK);
+    free(large_archive);
+    free(large_payload);
+    free(large_file);
+
+    if (argc >= 2) {
         FILE *fixture = fopen(argv[1], "wb");
         assert(fixture != NULL);
         assert(fwrite(archive, 1U, archive_bytes, fixture) == archive_bytes);
+        assert(fclose(fixture) == 0);
+    }
+    if (argc >= 3) {
+        FILE *fixture = fopen(argv[2], "wb");
+        assert(fixture != NULL);
+        assert(fwrite(streamed, 1U, sizeof(streamed), fixture) ==
+               sizeof(streamed));
         assert(fclose(fixture) == 0);
     }
 

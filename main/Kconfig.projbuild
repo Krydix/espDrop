@@ -72,15 +72,18 @@ config ESPDROP_AIRDROP_ASK_LAB
         attended lab run with explicit user consent.
 
 config ESPDROP_AIRDROP_UPLOAD_LAB
-    bool "Send one bounded hello.jpg after accepted /Ask"
+    bool "Stream one bounded hello.jpg after accepted /Ask"
     depends on ESPDROP_AIRDROP_ASK_LAB
     default n
     help
-        After the user accepts the attended /Ask, send one deterministic JPEG
-        in a zlib-compressed ODC cpio archive using the observed chunked dvzip
-        framing and Apple-order headers. The accepted TLS connection and exact
-        TransferID are reused. There is no retry. Normal and web-flasher builds
-        must leave this disabled.
+        After the user accepts the attended /Ask, stream one deterministic
+        JPEG through a 2 KiB source workspace into an ODC cpio archive. The
+        seekable fixture is zlib-counted, rewound, then streamed in the proven
+        dvzip profile. A fixed 16 KiB network staging buffer coalesces producer
+        writes; TLS writes remain below the lwIP send window. No complete file
+        or archive is buffered.
+        The accepted TLS connection and exact TransferID are reused. There is
+        no retry. Normal and web-flasher builds must leave this disabled.
 
 config ESPDROP_AWDL_LAB_TARGET_MAC
     string "AWDL lab endpoint MAC (empty permits auto-selection)"

@@ -157,9 +157,11 @@ test:
 		"$(ROOT_DIR)/tests/test_airdrop_upload.c" \
 		-o "$(BUILD_DIR)/host-tests/test_airdrop_upload"
 	@"$(BUILD_DIR)/host-tests/test_airdrop_upload" \
-		"$(BUILD_DIR)/host-tests/upload.cpio"
+		"$(BUILD_DIR)/host-tests/upload.cpio" \
+		"$(BUILD_DIR)/host-tests/upload-stored.dvzip"
 	@python3 "$(ROOT_DIR)/tests/test_airdrop_upload_archive.py" \
-		"$(BUILD_DIR)/host-tests/upload.cpio"
+		"$(BUILD_DIR)/host-tests/upload.cpio" \
+		"$(BUILD_DIR)/host-tests/upload-stored.dvzip"
 	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
 		-I"$(ROOT_DIR)/core/include" \
 		"$(ROOT_DIR)/core/src/airdrop_mdns.c" \

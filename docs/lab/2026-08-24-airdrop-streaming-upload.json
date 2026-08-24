@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-24",
+  "scope": "attended constant-memory relay upload from ESP32-S3 to a stock iPhone",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "firmwareBaseHead": "14b0c39",
+    "normalBuildTransmitEnabled": false
+  },
+  "receiver": {
+    "discoverability": "Everyone mode, user configured",
+    "peerMac": "52:f4:36:b8:fd:f5",
+    "instance": "86f842d35e0c._airdrop._tcp.local",
+    "host": "c9851681-b44c-49b4-93d6-09f2a5825d8d.local",
+    "ipv6": "fe80::50f4:36ff:feb8:fdf5",
+    "port": 8770
+  },
+  "source": {
+    "fileName": "hello.jpg",
+    "fileType": "public.jpeg",
+    "fileBytes": 445,
+    "callbackBacked": true,
+    "rewindable": true,
+    "passes": 2,
+    "sourceWorkspaceCapacityBytes": 2048,
+    "sourceWorkspaceHighWaterBytes": 445,
+    "networkStagingCapacityBytes": 16384,
+    "sourceCrc32": "67dacfe8"
+  },
+  "ask": {
+    "acceptedByUser": true,
+    "httpStatus": 200,
+    "requestBytes": 712,
+    "responseBytes": 442,
+    "responseBodyBytes": 359,
+    "transferID": "546DCCE1-DD6E-4875-AD09-3F48D06F8AF6"
+  },
+  "upload": {
+    "sameTlsConnection": true,
+    "transferID": "546DCCE1-DD6E-4875-AD09-3F48D06F8AF6",
+    "transferIDContinuity": true,
+    "archiveFormat": "ODC cpio",
+    "archiveBytes": 10240,
+    "compression": "two-pass streaming zlib",
+    "compressedBytes": 469,
+    "dvzipBlocks": 1,
+    "storedBlock": false,
+    "payloadBytes": 473,
+    "requestBytesIncludingChunkFraming": 819,
+    "responseBytes": 62,
+    "responseBodyBytes": 0,
+    "httpStatus": 200,
+    "streamStatus": 0,
+    "attempts": 1,
+    "retryEnabled": false
+  },
+  "storedControls": [
+    {
+      "profile": "64-byte padding fragments",
+      "requestBytesBeforeTimeout": 3024,
+      "httpResponseObserved": false
+    },
+    {
+      "profile": "2 KiB padding fragments",
+      "requestBytesBeforeTimeout": 5109,
+      "httpResponseObserved": false
+    },
+    {
+      "profile": "one HTTP chunk with 2 KiB TLS writes",
+      "requestBytesBeforeTimeout": 4438,
+      "httpResponseObserved": false
+    }
+  ],
+  "result": {
+    "fileArrivalConfirmedByUser": true,
+    "confirmed": "A rewindable callback source was zlib-counted, rewound, streamed without a complete file/archive buffer, accepted with HTTP 200, and received as hello.jpg by the stock iPhone.",
+    "notConfirmed": "microSD adapter, large payload throughput, non-seekable stored dvzip acceptance, other file types, other iOS versions, Contacts Only, and retry behavior remain unproven."
+  }
+}

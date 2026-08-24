@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independently validate the deterministic odc/dvzip upload fixture."""
+"""Independently validate contiguous and one-pass odc/dvzip fixtures."""
 
 from __future__ import annotations
 
@@ -61,6 +61,23 @@ def main() -> None:
     block_bytes = struct.unpack(">I", dvzip[:4])[0]
     assert block_bytes == len(dvzip) - 4
     assert zlib.decompress(dvzip[4:]) == archive
+
+    streamed = Path(sys.argv[2]).read_bytes()
+    rebuilt = bytearray()
+    offset = 0
+    blocks = 0
+    while offset < len(streamed):
+        encoded = struct.unpack(">I", streamed[offset : offset + 4])[0]
+        offset += 4
+        assert encoded & 0x8000_0000
+        block_bytes = encoded & 0x7FFF_FFFF
+        assert 0 < block_bytes <= 128 * 1024
+        rebuilt += streamed[offset : offset + block_bytes]
+        offset += block_bytes
+        blocks += 1
+    assert offset == len(streamed)
+    assert blocks == 1
+    assert bytes(rebuilt) == archive
     print("AirDrop upload archive tests passed")
 
 

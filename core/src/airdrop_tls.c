@@ -53,9 +53,12 @@ extern const unsigned char airdrop_lab_private_key_end[]
 #define AIRDROP_UPLOAD_ERROR_BUILD -24
 #define AIRDROP_UPLOAD_ERROR_PARSE -25
 #define AIRDROP_UPLOAD_ERROR_OVERFLOW -26
+#define AIRDROP_UPLOAD_ERROR_STREAM -27
 #define AIRDROP_UPLOAD_HEAD_BYTES 512U
+#define AIRDROP_UPLOAD_NETWORK_BUFFER_BYTES 16384U
 #define AIRDROP_UPLOAD_RESPONSE_BYTES 1024U
-#define AIRDROP_UPLOAD_COMPRESSED_BYTES 12288U
+#define AIRDROP_UPLOAD_TLS_WRITE_BYTES 2048U
+#define AIRDROP_UPLOAD_WORKSPACE_BYTES 2048U
 
 static uint8_t discover_request[AIRDROP_DISCOVER_REQUEST_BYTES];
 static uint8_t discover_response[AIRDROP_DISCOVER_RESPONSE_BYTES];
@@ -64,13 +67,43 @@ static uint8_t ask_request[AIRDROP_ASK_REQUEST_BYTES];
 static uint8_t ask_response[AIRDROP_ASK_RESPONSE_BYTES];
 
 #if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
-static uint8_t upload_archive[ESPDROP_AIRDROP_ODC_BLOCK_BYTES];
-static uint8_t upload_compressed[AIRDROP_UPLOAD_COMPRESSED_BYTES];
+static uint8_t upload_workspace[AIRDROP_UPLOAD_WORKSPACE_BYTES];
+static uint8_t upload_network_buffer[AIRDROP_UPLOAD_NETWORK_BUFFER_BYTES];
 static uint8_t upload_head[AIRDROP_UPLOAD_HEAD_BYTES];
 static uint8_t upload_response[AIRDROP_UPLOAD_RESPONSE_BYTES];
 static const uint8_t upload_jpeg[] = {
 #include "airdrop_lab_jpeg.inc"
 };
+
+typedef struct {
+    const uint8_t *data;
+    size_t data_bytes;
+    size_t offset;
+} fixture_source_t;
+
+static bool read_fixture_source(
+    void *context,
+    uint8_t *output,
+    size_t capacity,
+    size_t *bytes_read)
+{
+    fixture_source_t *source = context;
+    size_t available = source->data_bytes - source->offset;
+    const size_t bytes = available < capacity ? available : capacity;
+    if (bytes > 0U) {
+        memcpy(output, source->data + source->offset, bytes);
+        source->offset += bytes;
+    }
+    *bytes_read = bytes;
+    return true;
+}
+
+static bool rewind_fixture_source(void *context)
+{
+    fixture_source_t *source = context;
+    source->offset = 0U;
+    return true;
+}
 #endif
 
 static void copy_negotiated_text(
@@ -250,6 +283,7 @@ static void perform_ask(
     const char *server_name,
     uint16_t server_port,
     uint32_t timeout_ms,
+    const espdrop_airdrop_outgoing_file_t *outgoing,
     espdrop_airdrop_ask_result_t *result)
 {
     memset(result, 0, sizeof(*result));
@@ -270,8 +304,8 @@ static void perform_ask(
         .sender_model_name = "ESP32-S3",
         .sender_id = sender_id,
         .transfer_id = result->transfer_id,
-        .file_name = "hello.jpg",
-        .file_type = "public.jpeg",
+        .file_name = outgoing != NULL ? outgoing->file_name : "hello.jpg",
+        .file_type = outgoing != NULL ? outgoing->file_type : "public.jpeg",
     };
     const size_t body_bytes = espdrop_airdrop_build_ask_body(
         ask_body, sizeof(ask_body), &file);
@@ -364,50 +398,204 @@ static bool write_upload_part(
     return true;
 }
 
+typedef struct {
+    mbedtls_ssl_context *ssl;
+    int64_t deadline_us;
+    espdrop_airdrop_upload_result_t *result;
+    uint8_t *buffer;
+    size_t capacity;
+    size_t used;
+} upload_chunk_sink_t;
+
+static bool flush_upload_chunk(
+    upload_chunk_sink_t *sink)
+{
+    if (sink->used == 0U) {
+        return true;
+    }
+    uint8_t prefix[32];
+    const size_t prefix_bytes = espdrop_airdrop_build_chunk_prefix(
+        prefix, sizeof(prefix), sink->used);
+    static const uint8_t chunk_end[] = {'\r', '\n'};
+    if (prefix_bytes == 0U ||
+        !write_upload_part(sink->ssl, prefix, prefix_bytes,
+                           sink->deadline_us, sink->result)) {
+        return false;
+    }
+    size_t sent = 0U;
+    while (sent < sink->used) {
+        const size_t remaining = sink->used - sent;
+        const size_t bytes = remaining < AIRDROP_UPLOAD_TLS_WRITE_BYTES
+                                 ? remaining
+                                 : AIRDROP_UPLOAD_TLS_WRITE_BYTES;
+        if (!write_upload_part(sink->ssl, sink->buffer + sent, bytes,
+                               sink->deadline_us, sink->result)) {
+            return false;
+        }
+        sent += bytes;
+    }
+    if (!write_upload_part(sink->ssl, chunk_end, sizeof(chunk_end),
+                           sink->deadline_us, sink->result)) {
+        return false;
+    }
+    sink->used = 0U;
+    return true;
+}
+
+static bool buffer_upload_chunk(
+    void *context,
+    const uint8_t *data,
+    size_t data_bytes)
+{
+    upload_chunk_sink_t *sink = context;
+    while (data_bytes > 0U) {
+        if (sink->used == sink->capacity && !flush_upload_chunk(sink)) {
+            return false;
+        }
+        const size_t available = sink->capacity - sink->used;
+        const size_t portion = data_bytes < available ? data_bytes : available;
+        memcpy(sink->buffer + sink->used, data, portion);
+        sink->used += portion;
+        data += portion;
+        data_bytes -= portion;
+    }
+    return true;
+}
+
+typedef struct {
+    espdrop_airdrop_stream_write_t write;
+    void *context;
+    size_t bytes;
+    bool failed;
+} zlib_output_t;
+
+static mz_bool write_zlib_output(const void *data, int data_bytes, void *context)
+{
+    zlib_output_t *output = context;
+    if (data_bytes < 0 || (size_t)data_bytes > SIZE_MAX - output->bytes ||
+        (data_bytes > 0 && output->write != NULL &&
+         !output->write(output->context, data, (size_t)data_bytes))) {
+        output->failed = true;
+        return MZ_FALSE;
+    }
+    output->bytes += (size_t)data_bytes;
+    return MZ_TRUE;
+}
+
+static bool feed_zlib_compressor(
+    void *context,
+    const uint8_t *data,
+    size_t data_bytes)
+{
+    tdefl_compressor *compressor = context;
+    return tdefl_compress_buffer(
+               compressor, data, data_bytes, TDEFL_NO_FLUSH) ==
+           TDEFL_STATUS_OKAY;
+}
+
+static espdrop_airdrop_stream_status_t compress_odc_pass(
+    const espdrop_airdrop_source_t *source,
+    const char *archive_path,
+    uint32_t mtime,
+    espdrop_airdrop_stream_write_t write,
+    void *write_context,
+    espdrop_airdrop_stream_result_t *archive_result,
+    size_t *compressed_bytes)
+{
+    tdefl_compressor *compressor = heap_caps_malloc(
+        sizeof(*compressor), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (compressor == NULL) {
+        return ESPDROP_AIRDROP_STREAM_COMPRESS;
+    }
+    zlib_output_t output = {
+        .write = write,
+        .context = write_context,
+    };
+    const int flags = TDEFL_DEFAULT_MAX_PROBES | TDEFL_WRITE_ZLIB_HEADER;
+    espdrop_airdrop_stream_status_t stream_status =
+        ESPDROP_AIRDROP_STREAM_COMPRESS;
+    if (tdefl_init(compressor, write_zlib_output, &output, flags) ==
+        TDEFL_STATUS_OKAY) {
+        stream_status = espdrop_airdrop_stream_odc(
+            source, archive_path, mtime, upload_workspace,
+            sizeof(upload_workspace), feed_zlib_compressor, compressor,
+            archive_result);
+        if (stream_status == ESPDROP_AIRDROP_STREAM_OK) {
+            const tdefl_status finish = tdefl_compress_buffer(
+                compressor, NULL, 0U, TDEFL_FINISH);
+            if (output.failed) {
+                stream_status = ESPDROP_AIRDROP_STREAM_SINK;
+            } else if (finish != TDEFL_STATUS_DONE) {
+                stream_status = ESPDROP_AIRDROP_STREAM_COMPRESS;
+            }
+        }
+    }
+    heap_caps_free(compressor);
+    *compressed_bytes = output.bytes;
+    return stream_status;
+}
+
 static void perform_upload(
     mbedtls_ssl_context *ssl,
     mbedtls_ctr_drbg_context *random,
     const espdrop_airdrop_ask_result_t *ask,
+    const espdrop_airdrop_outgoing_file_t *outgoing,
     uint32_t timeout_ms,
     espdrop_airdrop_upload_result_t *result)
 {
     memset(result, 0, sizeof(*result));
     copy_negotiated_text(result->transfer_id, sizeof(result->transfer_id),
                          ask->transfer_id);
-    result->file_bytes = sizeof(upload_jpeg);
-    result->archive_bytes = espdrop_airdrop_build_odc_archive(
-        upload_archive, sizeof(upload_archive), "./hello.jpg", upload_jpeg,
-        sizeof(upload_jpeg), 0U);
-    if (result->archive_bytes == 0U) {
+    if (outgoing == NULL || outgoing->file_name == NULL ||
+        outgoing->file_type == NULL || outgoing->source.read == NULL ||
+        outgoing->source.size_bytes > CONFIG_ESPDROP_MAX_TRANSFER_BYTES) {
         result->error = AIRDROP_UPLOAD_ERROR_ARCHIVE;
         return;
     }
-
-    tdefl_compressor *compressor = heap_caps_malloc(
-        sizeof(*compressor), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (compressor == NULL) {
-        result->error = AIRDROP_UPLOAD_ERROR_COMPRESS;
+    char archive_path[260];
+    const int archive_path_bytes = snprintf(
+        archive_path, sizeof(archive_path), "./%s", outgoing->file_name);
+    espdrop_airdrop_stream_plan_t plan;
+    if (archive_path_bytes < 0 ||
+        (size_t)archive_path_bytes >= sizeof(archive_path) ||
+        !espdrop_airdrop_plan_stored_dvzip(
+            &plan, archive_path, outgoing->source.size_bytes)) {
+        result->error = AIRDROP_UPLOAD_ERROR_ARCHIVE;
         return;
     }
-    const int flags = TDEFL_DEFAULT_MAX_PROBES | TDEFL_WRITE_ZLIB_HEADER;
-    tdefl_status compression = tdefl_init(compressor, NULL, NULL, flags);
-    size_t input_bytes = result->archive_bytes;
-    size_t output_bytes = sizeof(upload_compressed);
-    if (compression == TDEFL_STATUS_OKAY) {
-        compression = tdefl_compress(
-            compressor, upload_archive, &input_bytes, upload_compressed,
-            &output_bytes, TDEFL_FINISH);
+    result->file_bytes = plan.file_bytes;
+    result->archive_bytes = plan.archive_bytes;
+    const bool use_zlib = outgoing->source.rewind != NULL;
+    uint32_t sizing_crc32 = 0U;
+    if (use_zlib) {
+        espdrop_airdrop_stream_result_t sizing;
+        size_t compressed_bytes = 0U;
+        result->stream_status = compress_odc_pass(
+            &outgoing->source, archive_path, outgoing->mtime, NULL, NULL,
+            &sizing, &compressed_bytes);
+        if (result->stream_status != ESPDROP_AIRDROP_STREAM_OK ||
+            sizing.archive_bytes != plan.archive_bytes ||
+            compressed_bytes == 0U || compressed_bytes > UINT32_MAX ||
+            compressed_bytes > SIZE_MAX -
+                ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES) {
+            result->error = AIRDROP_UPLOAD_ERROR_COMPRESS;
+            return;
+        }
+        sizing_crc32 = sizing.source_crc32;
+        if (!outgoing->source.rewind(outgoing->source.context)) {
+            result->stream_status = ESPDROP_AIRDROP_STREAM_REWIND;
+            result->error = AIRDROP_UPLOAD_ERROR_STREAM;
+            return;
+        }
+        result->compressed_bytes = compressed_bytes;
+        result->dvzip_blocks = 1U;
+        result->payload_bytes =
+            ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES + compressed_bytes;
+    } else {
+        result->dvzip_blocks = plan.dvzip_blocks;
+        result->payload_bytes = plan.payload_bytes;
+        result->stored_blocks = true;
     }
-    heap_caps_free(compressor);
-    if (compression != TDEFL_STATUS_DONE ||
-        input_bytes != result->archive_bytes || output_bytes == 0U ||
-        output_bytes > UINT32_MAX) {
-        result->error = AIRDROP_UPLOAD_ERROR_COMPRESS;
-        return;
-    }
-    result->compressed_bytes = output_bytes;
-    result->payload_bytes =
-        ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES + output_bytes;
 
     uint8_t pseudonym_random[16];
     uint8_t token_random[32];
@@ -431,16 +619,10 @@ static void perform_upload(
 
     const size_t head_bytes = espdrop_airdrop_build_upload_head(
         upload_head, sizeof(upload_head), &identity, result->payload_bytes);
-    uint8_t chunk_prefix[32];
-    const size_t prefix_bytes = espdrop_airdrop_build_chunk_prefix(
-        chunk_prefix, sizeof(chunk_prefix), result->payload_bytes);
-    uint8_t block_header[ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES];
     uint8_t terminator[8];
     const size_t terminator_bytes = espdrop_airdrop_build_chunk_terminator(
         terminator, sizeof(terminator));
-    if (head_bytes == 0U || prefix_bytes == 0U || terminator_bytes == 0U ||
-        !espdrop_airdrop_build_dvzip_block_header(
-            block_header, (uint32_t)output_bytes, false) ||
+    if (head_bytes == 0U || terminator_bytes == 0U ||
         !result->transfer_id_continuity) {
         result->error = AIRDROP_UPLOAD_ERROR_BUILD;
         return;
@@ -449,16 +631,57 @@ static void perform_upload(
     result->attempted = true;
     const int64_t deadline_us =
         esp_timer_get_time() + (int64_t)timeout_ms * 1000;
-    static const uint8_t chunk_end[] = {'\r', '\n'};
-    if (!write_upload_part(ssl, upload_head, head_bytes, deadline_us, result) ||
-        !write_upload_part(ssl, chunk_prefix, prefix_bytes, deadline_us,
-                           result) ||
-        !write_upload_part(ssl, block_header, sizeof(block_header), deadline_us,
-                           result) ||
-        !write_upload_part(ssl, upload_compressed, output_bytes, deadline_us,
-                           result) ||
-        !write_upload_part(ssl, chunk_end, sizeof(chunk_end), deadline_us,
-                           result) ||
+    if (!write_upload_part(
+            ssl, upload_head, head_bytes, deadline_us, result)) {
+        return;
+    }
+    upload_chunk_sink_t sink = {
+        .ssl = ssl,
+        .deadline_us = deadline_us,
+        .result = result,
+        .buffer = upload_network_buffer,
+        .capacity = sizeof(upload_network_buffer),
+    };
+    espdrop_airdrop_stream_result_t streamed;
+    memset(&streamed, 0, sizeof(streamed));
+    if (use_zlib) {
+        uint8_t block_header[ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES];
+        size_t compressed_bytes = 0U;
+        if (!espdrop_airdrop_build_dvzip_block_header(
+                block_header, (uint32_t)result->compressed_bytes, false) ||
+            !buffer_upload_chunk(
+                &sink, block_header, sizeof(block_header))) {
+            result->stream_status = ESPDROP_AIRDROP_STREAM_SINK;
+        } else {
+            result->stream_status = compress_odc_pass(
+                &outgoing->source, archive_path, outgoing->mtime,
+                buffer_upload_chunk, &sink, &streamed, &compressed_bytes);
+            if (result->stream_status == ESPDROP_AIRDROP_STREAM_OK &&
+                (compressed_bytes != result->compressed_bytes ||
+                 streamed.source_crc32 != sizing_crc32)) {
+                result->stream_status = ESPDROP_AIRDROP_STREAM_COMPRESS;
+            }
+        }
+    } else {
+        result->stream_status = espdrop_airdrop_stream_stored_dvzip(
+            &outgoing->source, archive_path, outgoing->mtime,
+            upload_workspace, sizeof(upload_workspace), buffer_upload_chunk,
+            &sink, &streamed);
+    }
+    result->archive_bytes = streamed.archive_bytes;
+    if (!use_zlib) {
+        result->dvzip_blocks = streamed.dvzip_blocks;
+        result->payload_bytes = streamed.payload_bytes;
+    }
+    result->workspace_high_water = streamed.workspace_high_water;
+    result->source_crc32 = streamed.source_crc32;
+    if (result->stream_status != ESPDROP_AIRDROP_STREAM_OK) {
+        if (result->error == 0) {
+            result->error = AIRDROP_UPLOAD_ERROR_STREAM;
+        }
+        return;
+    }
+    if (!flush_upload_chunk(&sink) ||
         !write_upload_part(ssl, terminator, terminator_bytes, deadline_us,
                            result)) {
         return;
@@ -528,6 +751,7 @@ static bool run_tls(
     uint32_t ask_timeout_ms,
     espdrop_airdrop_ask_result_t *ask_result,
     uint32_t upload_timeout_ms,
+    const espdrop_airdrop_outgoing_file_t *outgoing,
     espdrop_airdrop_upload_result_t *upload_result)
 {
     if (socket_fd < 0 || timeout_ms == 0U || result == NULL) {
@@ -652,12 +876,12 @@ static bool run_tls(
              (discover_result->response_complete &&
               discover_result->http_status == 200U))) {
             perform_ask(&ssl, &random, server_name, discover_port,
-                        ask_timeout_ms, ask_result);
+                        ask_timeout_ms, outgoing, ask_result);
 #if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
             if (upload_result != NULL && ask_result->response_complete &&
                 ask_result->http_status == 200U) {
-                perform_upload(&ssl, &random, ask_result, upload_timeout_ms,
-                               upload_result);
+                perform_upload(&ssl, &random, ask_result, outgoing,
+                               upload_timeout_ms, upload_result);
             }
 #else
             (void)upload_timeout_ms;
@@ -684,7 +908,7 @@ bool espdrop_airdrop_tls_probe(
     espdrop_airdrop_tls_result_t *result)
 {
     return run_tls(socket_fd, server_name, timeout_ms, result, 0U, 0U, NULL,
-                   0U, NULL, 0U, NULL);
+                   0U, NULL, 0U, NULL, NULL);
 }
 
 bool espdrop_airdrop_tls_discover_probe(
@@ -703,7 +927,7 @@ bool espdrop_airdrop_tls_discover_probe(
     memset(discover_result, 0, sizeof(*discover_result));
     return run_tls(socket_fd, server_name, handshake_timeout_ms, tls_result,
                    server_port, discover_timeout_ms, discover_result, 0U,
-                   NULL, 0U, NULL);
+                   NULL, 0U, NULL, NULL);
 }
 
 bool espdrop_airdrop_tls_ask_probe(
@@ -721,7 +945,7 @@ bool espdrop_airdrop_tls_ask_probe(
     memset(ask_result, 0, sizeof(*ask_result));
     return run_tls(socket_fd, server_name, handshake_timeout_ms, tls_result,
                    server_port, 0U, NULL, ask_timeout_ms, ask_result, 0U,
-                   NULL);
+                   NULL, NULL);
 }
 
 bool espdrop_airdrop_tls_ask_upload_probe(
@@ -736,16 +960,24 @@ bool espdrop_airdrop_tls_ask_upload_probe(
     espdrop_airdrop_upload_result_t *upload_result)
 {
 #if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
-    if (server_port == 0U || ask_timeout_ms == 0U ||
-        upload_timeout_ms == 0U || ask_result == NULL ||
-        upload_result == NULL) {
-        return false;
-    }
-    memset(ask_result, 0, sizeof(*ask_result));
-    memset(upload_result, 0, sizeof(*upload_result));
-    return run_tls(socket_fd, server_name, handshake_timeout_ms, tls_result,
-                   server_port, 0U, NULL, ask_timeout_ms, ask_result,
-                   upload_timeout_ms, upload_result);
+    fixture_source_t fixture = {
+        .data = upload_jpeg,
+        .data_bytes = sizeof(upload_jpeg),
+    };
+    const espdrop_airdrop_outgoing_file_t file = {
+        .file_name = "hello.jpg",
+        .file_type = "public.jpeg",
+        .source = {
+            .context = &fixture,
+            .size_bytes = sizeof(upload_jpeg),
+            .read = read_fixture_source,
+            .rewind = rewind_fixture_source,
+        },
+    };
+    return espdrop_airdrop_tls_ask_upload_stream_probe(
+        socket_fd, server_name, server_port, handshake_timeout_ms,
+        ask_timeout_ms, upload_timeout_ms, &file, tls_result, ask_result,
+        upload_result);
 #else
     (void)socket_fd;
     (void)server_name;
@@ -753,6 +985,56 @@ bool espdrop_airdrop_tls_ask_upload_probe(
     (void)handshake_timeout_ms;
     (void)ask_timeout_ms;
     (void)upload_timeout_ms;
+    if (tls_result != NULL) {
+        memset(tls_result, 0, sizeof(*tls_result));
+        tls_result->error = AIRDROP_UPLOAD_ERROR_BUILD;
+    }
+    if (ask_result != NULL) {
+        memset(ask_result, 0, sizeof(*ask_result));
+        ask_result->error = AIRDROP_UPLOAD_ERROR_BUILD;
+    }
+    if (upload_result != NULL) {
+        memset(upload_result, 0, sizeof(*upload_result));
+        upload_result->error = AIRDROP_UPLOAD_ERROR_BUILD;
+    }
+    return false;
+#endif
+}
+
+bool espdrop_airdrop_tls_ask_upload_stream_probe(
+    int socket_fd,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t handshake_timeout_ms,
+    uint32_t ask_timeout_ms,
+    uint32_t upload_timeout_ms,
+    const espdrop_airdrop_outgoing_file_t *file,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_ask_result_t *ask_result,
+    espdrop_airdrop_upload_result_t *upload_result)
+{
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+    if (server_port == 0U || ask_timeout_ms == 0U ||
+        upload_timeout_ms == 0U || file == NULL ||
+        file->file_name == NULL || file->file_name[0] == '\0' ||
+        file->file_type == NULL || file->file_type[0] == '\0' ||
+        file->source.read == NULL || ask_result == NULL ||
+        upload_result == NULL) {
+        return false;
+    }
+    memset(ask_result, 0, sizeof(*ask_result));
+    memset(upload_result, 0, sizeof(*upload_result));
+    return run_tls(socket_fd, server_name, handshake_timeout_ms, tls_result,
+                   server_port, 0U, NULL, ask_timeout_ms, ask_result,
+                   upload_timeout_ms, file, upload_result);
+#else
+    (void)socket_fd;
+    (void)server_name;
+    (void)server_port;
+    (void)handshake_timeout_ms;
+    (void)ask_timeout_ms;
+    (void)upload_timeout_ms;
+    (void)file;
     if (tls_result != NULL) {
         memset(tls_result, 0, sizeof(*tls_result));
         tls_result->error = AIRDROP_UPLOAD_ERROR_BUILD;
@@ -854,6 +1136,40 @@ bool espdrop_airdrop_tls_ask_upload_probe(
     (void)handshake_timeout_ms;
     (void)ask_timeout_ms;
     (void)upload_timeout_ms;
+    if (tls_result != NULL) {
+        memset(tls_result, 0, sizeof(*tls_result));
+        tls_result->error = -1;
+    }
+    if (ask_result != NULL) {
+        memset(ask_result, 0, sizeof(*ask_result));
+        ask_result->error = -1;
+    }
+    if (upload_result != NULL) {
+        memset(upload_result, 0, sizeof(*upload_result));
+        upload_result->error = -1;
+    }
+    return false;
+}
+
+bool espdrop_airdrop_tls_ask_upload_stream_probe(
+    int socket_fd,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t handshake_timeout_ms,
+    uint32_t ask_timeout_ms,
+    uint32_t upload_timeout_ms,
+    const espdrop_airdrop_outgoing_file_t *file,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_ask_result_t *ask_result,
+    espdrop_airdrop_upload_result_t *upload_result)
+{
+    (void)socket_fd;
+    (void)server_name;
+    (void)server_port;
+    (void)handshake_timeout_ms;
+    (void)ask_timeout_ms;
+    (void)upload_timeout_ms;
+    (void)file;
     if (tls_result != NULL) {
         memset(tls_result, 0, sizeof(*tls_result));
         tls_result->error = -1;

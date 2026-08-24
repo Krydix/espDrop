@@ -487,6 +487,8 @@ static void probe_airdrop_tcp_service(
                  "AWDL-AIRDROP-UPLOAD instance=%s attempted=%u result=%s "
                  "error=%d status=%u request_bytes=%u payload_bytes=%u "
                  "archive_bytes=%u compressed_bytes=%u file_bytes=%u "
+                 "dvzip_blocks=%u stored=%u workspace=%u crc32=%08lx "
+                 "stream_status=%d "
                  "response_bytes=%u body_bytes=%u transfer_id=%s "
                  "continuity=%u retry=disabled",
                  service->instance, upload.attempted ? 1U : 0U,
@@ -498,6 +500,11 @@ static void probe_airdrop_tcp_service(
                  (unsigned)upload.archive_bytes,
                  (unsigned)upload.compressed_bytes,
                  (unsigned)upload.file_bytes,
+                 (unsigned)upload.dvzip_blocks,
+                 upload.stored_blocks ? 1U : 0U,
+                 (unsigned)upload.workspace_high_water,
+                 (unsigned long)upload.source_crc32,
+                 upload.stream_status,
                  (unsigned)upload.response_bytes,
                  (unsigned)upload.body_bytes, upload.transfer_id,
                  upload.transfer_id_continuity ? 1U : 0U);

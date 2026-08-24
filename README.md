@@ -47,6 +47,9 @@ cloud service.
 - a hardware-proven attended `/Upload`: ODC cpio, zlib-compressed dvzip,
   Apple-order headers, same accepted TransferID and TLS connection, HTTP 200,
   and a JPEG received by the stock iPhone; disabled in normal firmware
+- a hardware-proven constant-memory relay sender: seekable/spooled sources are
+  zlib-counted, rewound, then streamed through a fixed 2 KiB source workspace;
+  the stock iPhone accepted the result and received the JPEG
 - verbatim preservation of a peer's modern 16-slot AWDL channel sequence
 - bounded ephemeral BLE/AWDL/AirDrop peer model
 - TapDrop scoring based on timing, appearance, cross-layer observation, and
@@ -192,6 +195,12 @@ interoperability work are pinned as research inputs in the ledger.
 - 15-second TapDrop correlation sessions;
 - no persistent phone identifier;
 - no probabilistic auto-send when the target is ambiguous.
+
+The relay source may be backed by microSD, USB ingress, a camera, or another
+coprocessor. Its byte length must be stable and compressed size must be known
+before `/Upload`, because the working AirDrop profile declares `TotalBytes` in
+advance. Seekable sources satisfy this with a counting pass and rewind;
+non-seekable ingress should first spool to storage.
 
 ## License
 

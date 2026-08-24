@@ -297,6 +297,10 @@ AIRDROP_UPLOAD = re.compile(
     r"archive_bytes=(?P<archive_bytes>\d+) "
     r"compressed_bytes=(?P<compressed_bytes>\d+) "
     r"file_bytes=(?P<file_bytes>\d+) "
+    r"dvzip_blocks=(?P<dvzip_blocks>\d+) "
+    r"stored=(?P<stored>\d+) workspace=(?P<workspace>\d+) "
+    r"crc32=(?P<crc32>[0-9a-f]+) "
+    r"stream_status=(?P<stream_status>-?\d+) "
     r"response_bytes=(?P<response_bytes>\d+) "
     r"body_bytes=(?P<body_bytes>\d+) "
     r"transfer_id=(?P<transfer_id>[^ ]+) "
@@ -642,9 +646,11 @@ def main() -> None:
                     "attempted", "error", "status", "request_bytes",
                     "payload_bytes", "archive_bytes", "compressed_bytes",
                     "file_bytes", "response_bytes", "body_bytes",
+                    "dvzip_blocks", "stored", "workspace", "stream_status",
                     "continuity",
                 ):
                     upload[key] = int(upload[key])
+                upload["crc32"] = int(upload["crc32"], 16)
                 airdrop_upload.append(upload)
 
     unique_sources = sorted({item["source"] for item in frames})

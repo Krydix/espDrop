@@ -183,11 +183,17 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
   This confirms one working profile, not that alternate profiles must fail.
 - [ ] Confirm cpio versus dvzip by file type.
   One zlib-compressed dvzip block containing an ODC cpio JPEG archive is now
-  hardware-proven. Bare cpio and other file types remain untested.
+  hardware-proven from both contiguous and two-pass streaming senders. Three
+  stored-dvzip controls hit sender TLS timeouts before an HTTP response, so
+  stored-block receiver acceptance remains unproven. Bare cpio and other file
+  types remain untested.
 - [ ] Prove bounded streaming receive to microSD.
 - [x] Prove one embedded JPEG send to a stock iPhone. The 445-byte lab fixture
   arrived as `hello.jpg` after explicit acceptance, with no retry.
 - [ ] Prove one JPEG send from microSD.
+  The rewindable source boundary is hardware-proven using an embedded fixture,
+  a fixed 2 KiB source workspace, and two zlib passes. A concrete microSD
+  adapter still needs the selected board's SD wiring and a live file.
 
 ## M4/M5 — TapDrop
 

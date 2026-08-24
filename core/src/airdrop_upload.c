@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define ODC_FILE_SIZE_MAX UINT64_C(077777777777)
+
 static bool is_upper_hex(char value)
 {
     return (value >= '0' && value <= '9') ||
@@ -132,6 +134,11 @@ static bool write_odc_header(
     if (name_bytes == 0U || name_bytes > UINT32_C(0777777)) {
         return false;
     }
+#if SIZE_MAX > UINT32_MAX
+    if ((uint64_t)file_bytes > ODC_FILE_SIZE_MAX) {
+        return false;
+    }
+#endif
     char header[ESPDROP_AIRDROP_ODC_HEADER_BYTES + 1U];
     const int length = snprintf(
         header, sizeof(header),
@@ -196,6 +203,284 @@ size_t espdrop_airdrop_build_odc_archive(
     offset += trailer_bytes;
     memset(output + offset, 0, archive_bytes - offset);
     return archive_bytes;
+}
+
+bool espdrop_airdrop_plan_stored_dvzip(
+    espdrop_airdrop_stream_plan_t *plan,
+    const char *archive_path,
+    size_t file_bytes)
+{
+    static const char trailer[] = "TRAILER!!!";
+    if (plan == NULL || !archive_path_valid(archive_path)) {
+        return false;
+    }
+#if SIZE_MAX > UINT32_MAX
+    if ((uint64_t)file_bytes > ODC_FILE_SIZE_MAX) {
+        return false;
+    }
+#endif
+    const size_t path_bytes = strlen(archive_path) + 1U;
+    const size_t fixed_bytes = ESPDROP_AIRDROP_ODC_HEADER_BYTES * 2U +
+                               path_bytes + sizeof(trailer);
+    if (file_bytes > SIZE_MAX - fixed_bytes) {
+        return false;
+    }
+    const size_t unpadded = fixed_bytes + file_bytes;
+    if (unpadded > SIZE_MAX - (ESPDROP_AIRDROP_ODC_BLOCK_BYTES - 1U)) {
+        return false;
+    }
+    const size_t archive_bytes =
+        ((unpadded + ESPDROP_AIRDROP_ODC_BLOCK_BYTES - 1U) /
+         ESPDROP_AIRDROP_ODC_BLOCK_BYTES) *
+        ESPDROP_AIRDROP_ODC_BLOCK_BYTES;
+    const size_t blocks =
+        (archive_bytes + ESPDROP_AIRDROP_DVZIP_STREAM_BLOCK_BYTES - 1U) /
+        ESPDROP_AIRDROP_DVZIP_STREAM_BLOCK_BYTES;
+    if (blocks > (SIZE_MAX - archive_bytes) /
+                     ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES) {
+        return false;
+    }
+    *plan = (espdrop_airdrop_stream_plan_t){
+        .file_bytes = file_bytes,
+        .archive_bytes = archive_bytes,
+        .dvzip_blocks = blocks,
+        .payload_bytes = archive_bytes +
+            blocks * ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES,
+    };
+    return true;
+}
+
+typedef struct {
+    espdrop_airdrop_stream_write_t write;
+    void *context;
+    size_t archive_remaining;
+    size_t block_remaining;
+    espdrop_airdrop_stream_result_t *result;
+} stored_dvzip_writer_t;
+
+static bool write_stored_archive_bytes(
+    stored_dvzip_writer_t *writer,
+    const uint8_t *data,
+    size_t data_bytes)
+{
+    while (data_bytes > 0U) {
+        if (writer->archive_remaining == 0U) {
+            return false;
+        }
+        if (writer->block_remaining == 0U) {
+            writer->block_remaining =
+                writer->archive_remaining <
+                        ESPDROP_AIRDROP_DVZIP_STREAM_BLOCK_BYTES
+                    ? writer->archive_remaining
+                    : ESPDROP_AIRDROP_DVZIP_STREAM_BLOCK_BYTES;
+            uint8_t header[ESPDROP_AIRDROP_DVZIP_BLOCK_HEADER_BYTES];
+            if (!espdrop_airdrop_build_dvzip_block_header(
+                    header, (uint32_t)writer->block_remaining, true) ||
+                !writer->write(writer->context, header, sizeof(header))) {
+                return false;
+            }
+            ++writer->result->dvzip_blocks;
+            writer->result->payload_bytes += sizeof(header);
+        }
+        size_t portion = data_bytes;
+        if (portion > writer->block_remaining) {
+            portion = writer->block_remaining;
+        }
+        if (portion > writer->archive_remaining ||
+            !writer->write(writer->context, data, portion)) {
+            return false;
+        }
+        data += portion;
+        data_bytes -= portion;
+        writer->block_remaining -= portion;
+        writer->archive_remaining -= portion;
+        writer->result->archive_bytes += portion;
+        writer->result->payload_bytes += portion;
+    }
+    return true;
+}
+
+static uint32_t crc32_update(
+    uint32_t crc,
+    const uint8_t *data,
+    size_t data_bytes)
+{
+    for (size_t index = 0U; index < data_bytes; ++index) {
+        crc ^= data[index];
+        for (unsigned bit = 0U; bit < 8U; ++bit) {
+            const uint32_t mask = (uint32_t)-(int32_t)(crc & 1U);
+            crc = (crc >> 1U) ^ (UINT32_C(0xedb88320) & mask);
+        }
+    }
+    return crc;
+}
+
+typedef struct {
+    espdrop_airdrop_stream_write_t write;
+    void *context;
+    size_t remaining;
+    size_t emitted;
+} odc_writer_t;
+
+static bool write_odc_bytes(
+    odc_writer_t *writer,
+    const uint8_t *data,
+    size_t data_bytes)
+{
+    if (data_bytes > writer->remaining ||
+        !writer->write(writer->context, data, data_bytes)) {
+        return false;
+    }
+    writer->remaining -= data_bytes;
+    writer->emitted += data_bytes;
+    return true;
+}
+
+espdrop_airdrop_stream_status_t espdrop_airdrop_stream_odc(
+    const espdrop_airdrop_source_t *source,
+    const char *archive_path,
+    uint32_t mtime,
+    uint8_t *workspace,
+    size_t workspace_bytes,
+    espdrop_airdrop_stream_write_t write,
+    void *write_context,
+    espdrop_airdrop_stream_result_t *result)
+{
+    if (source == NULL || source->read == NULL || workspace == NULL ||
+        workspace_bytes == 0U || write == NULL || result == NULL) {
+        return ESPDROP_AIRDROP_STREAM_INVALID;
+    }
+    memset(result, 0, sizeof(*result));
+    espdrop_airdrop_stream_plan_t plan;
+    if (!espdrop_airdrop_plan_stored_dvzip(
+            &plan, archive_path, source->size_bytes)) {
+        return ESPDROP_AIRDROP_STREAM_SIZE;
+    }
+
+    odc_writer_t writer = {
+        .write = write,
+        .context = write_context,
+        .remaining = plan.archive_bytes,
+    };
+    uint8_t header[ESPDROP_AIRDROP_ODC_HEADER_BYTES];
+    const size_t path_bytes = strlen(archive_path) + 1U;
+    if (!write_odc_header(header, 1U, 0100644U, mtime, path_bytes,
+                          source->size_bytes) ||
+        !write_odc_bytes(&writer, header, sizeof(header)) ||
+        !write_odc_bytes(
+            &writer, (const uint8_t *)archive_path, path_bytes)) {
+        return ESPDROP_AIRDROP_STREAM_SINK;
+    }
+
+    size_t remaining = source->size_bytes;
+    uint32_t crc = UINT32_MAX;
+    while (remaining > 0U) {
+        const size_t requested =
+            remaining < workspace_bytes ? remaining : workspace_bytes;
+        size_t buffered = 0U;
+        while (buffered < requested) {
+            size_t bytes_read = 0U;
+            if (!source->read(
+                    source->context, workspace + buffered,
+                    requested - buffered, &bytes_read) ||
+                bytes_read > requested - buffered) {
+                return ESPDROP_AIRDROP_STREAM_SOURCE;
+            }
+            if (bytes_read == 0U) {
+                return ESPDROP_AIRDROP_STREAM_TRUNCATED;
+            }
+            buffered += bytes_read;
+        }
+        crc = crc32_update(crc, workspace, buffered);
+        remaining -= buffered;
+        result->source_bytes += buffered;
+        result->source_crc32 = crc ^ UINT32_MAX;
+        if (buffered > result->workspace_high_water) {
+            result->workspace_high_water = buffered;
+        }
+        if (!write_odc_bytes(&writer, workspace, buffered)) {
+            return ESPDROP_AIRDROP_STREAM_SINK;
+        }
+    }
+
+    static const char trailer[] = "TRAILER!!!";
+    if (!write_odc_header(header, 0U, 0U, 0U, sizeof(trailer), 0U) ||
+        !write_odc_bytes(&writer, header, sizeof(header)) ||
+        !write_odc_bytes(
+            &writer, (const uint8_t *)trailer, sizeof(trailer))) {
+        return ESPDROP_AIRDROP_STREAM_SINK;
+    }
+    /* The archive tail can be almost 10 KiB. Reuse the caller's workspace so
+     * a relay does not turn that padding into hundreds of tiny TLS records. */
+    memset(workspace, 0, workspace_bytes);
+    while (writer.remaining > 0U) {
+        const size_t bytes = writer.remaining < workspace_bytes
+                                 ? writer.remaining
+                                 : workspace_bytes;
+        if (!write_odc_bytes(&writer, workspace, bytes)) {
+            return ESPDROP_AIRDROP_STREAM_SINK;
+        }
+    }
+    result->archive_bytes = writer.emitted;
+    result->payload_bytes = writer.emitted;
+    if (result->source_bytes != plan.file_bytes ||
+        result->archive_bytes != plan.archive_bytes) {
+        return ESPDROP_AIRDROP_STREAM_SIZE;
+    }
+    return ESPDROP_AIRDROP_STREAM_OK;
+}
+
+static bool write_stored_archive_sink(
+    void *context,
+    const uint8_t *data,
+    size_t data_bytes)
+{
+    return write_stored_archive_bytes(context, data, data_bytes);
+}
+
+espdrop_airdrop_stream_status_t espdrop_airdrop_stream_stored_dvzip(
+    const espdrop_airdrop_source_t *source,
+    const char *archive_path,
+    uint32_t mtime,
+    uint8_t *workspace,
+    size_t workspace_bytes,
+    espdrop_airdrop_stream_write_t write,
+    void *write_context,
+    espdrop_airdrop_stream_result_t *result)
+{
+    if (source == NULL || source->read == NULL || workspace == NULL ||
+        workspace_bytes == 0U || write == NULL || result == NULL) {
+        return ESPDROP_AIRDROP_STREAM_INVALID;
+    }
+    memset(result, 0, sizeof(*result));
+    espdrop_airdrop_stream_plan_t plan;
+    if (!espdrop_airdrop_plan_stored_dvzip(
+            &plan, archive_path, source->size_bytes)) {
+        return ESPDROP_AIRDROP_STREAM_SIZE;
+    }
+    stored_dvzip_writer_t writer = {
+        .write = write,
+        .context = write_context,
+        .archive_remaining = plan.archive_bytes,
+        .result = result,
+    };
+    espdrop_airdrop_stream_result_t archive;
+    const espdrop_airdrop_stream_status_t status = espdrop_airdrop_stream_odc(
+        source, archive_path, mtime, workspace, workspace_bytes,
+        write_stored_archive_sink, &writer, &archive);
+    result->source_bytes = archive.source_bytes;
+    result->workspace_high_water = archive.workspace_high_water;
+    result->source_crc32 = archive.source_crc32;
+    if (status != ESPDROP_AIRDROP_STREAM_OK) {
+        return status;
+    }
+    if (writer.archive_remaining != 0U || writer.block_remaining != 0U ||
+        result->archive_bytes != plan.archive_bytes ||
+        result->dvzip_blocks != plan.dvzip_blocks ||
+        result->payload_bytes != plan.payload_bytes) {
+        return ESPDROP_AIRDROP_STREAM_SIZE;
+    }
+    return ESPDROP_AIRDROP_STREAM_OK;
 }
 
 size_t espdrop_airdrop_build_upload_head(
