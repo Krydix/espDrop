@@ -47,6 +47,8 @@ typedef struct {
     uint32_t self_metric;
     uint32_t master_counter;
     uint32_t self_counter;
+    bool advertise_airdrop_tcp;
+    uint16_t airdrop_port;
 } espdrop_awdl_tx_state_t;
 
 bool espdrop_awdl_tx_state_from_mif(

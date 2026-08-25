@@ -2,6 +2,8 @@ idf_component_register(SRCS "main.c"
                             "improv_serial_codec.c"
                             "maintenance_serial.c"
                             "ota_update.c"
+                            "relay_spool.c"
+                            "relay_stream.c"
                             "wifi_provision.c"
                        INCLUDE_DIRS "."
                        REQUIRES app_update core tapdrop esp_driver_gpio

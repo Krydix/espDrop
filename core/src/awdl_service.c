@@ -24,6 +24,11 @@ static uint16_t read_le16(const uint8_t *value)
     return (uint16_t)value[0] | ((uint16_t)value[1] << 8U);
 }
 
+static uint16_t read_be16(const uint8_t *value)
+{
+    return ((uint16_t)value[0] << 8U) | (uint16_t)value[1];
+}
+
 static bool label_equal(
     const uint8_t *label,
     size_t length,
@@ -160,6 +165,25 @@ static bool scan_service_record(
         ++profile->txt_count;
     } else if (record_type == AWDL_DNS_SRV) {
         ++profile->srv_count;
+        /* The SRV payload is priority, weight, port, then target name. A
+         * service-response record belongs to the MIF's originating peer, so
+         * its instance label and port complete that peer's AWDL endpoint. */
+        const uint8_t *data = value + data_length_offset + 4U;
+        if (service.airdrop_tcp && data_length >= 7U && name_length >= 3U) {
+            const uint8_t label_length = value[2U];
+            const uint16_t port = read_be16(data + 4U);
+            if (label_length > 0U && label_length <= 63U &&
+                (size_t)label_length + 1U <= name_length &&
+                (size_t)label_length <
+                    sizeof(profile->airdrop_service_id) &&
+                port != 0U) {
+                memcpy(profile->airdrop_service_id, value + 3U,
+                       label_length);
+                profile->airdrop_service_id[label_length] = '\0';
+                profile->airdrop_port = port;
+                profile->has_airdrop_endpoint = true;
+            }
+        }
     }
     profile->has_airdrop = profile->has_airdrop || service.airdrop;
     profile->has_airdrop_tcp =

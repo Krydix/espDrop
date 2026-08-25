@@ -30,6 +30,19 @@ config ESPDROP_AWDL_TX_LAB
         sub-profile extends that bound to 25 seconds. Normal and web-flasher
         builds must leave this disabled.
 
+config ESPDROP_AWDL_ACTIVE_RX_LAB
+    bool "Bind the private station RX policy to the AWDL BSSID"
+    depends on ESPDROP_AWDL_TX_LAB
+    default n
+    help
+        Research-only ESP32-S3/ESP-IDF 5.4 experiment. After promiscuous mode
+        starts, bind the Wi-Fi blob's normal station pre-authentication RX
+        policy to the AWDL BSSID. This tests whether the closed firmware can
+        receive and automatically acknowledge directed AWDL data while still
+        exposing frames to the promiscuous callback. It uses undocumented
+        symbols, is version-pinned, and must remain disabled in production and
+        web-flasher builds.
+
 config ESPDROP_AWDL_NETIF
     bool "Attach decoded AWDL IPv6 to an ESP-IDF network interface"
     depends on ESPDROP_AWDL_PROBE
@@ -38,6 +51,22 @@ config ESPDROP_AWDL_NETIF
         Creates an Ethernet-shaped esp-netif for lwIP and feeds it decoded
         AWDL frames. Normal firmware suppresses all packets lwIP asks the
         driver to transmit; radio output remains restricted to a lab profile.
+
+config ESPDROP_BLE_WAKE_LAB
+    bool "Emit a bounded AirDrop BLE wake advertisement"
+    depends on ESPDROP_AWDL_TX_LAB && BT_NIMBLE_ENABLED
+    default n
+    help
+        Broadcast the Apple Continuity AirDrop record that wakes an
+        Everyone-mode receiver and causes it to publish its AirDrop service.
+        The four contact short-hash fields are zero. This is an attended lab
+        profile; normal and web-flasher builds leave it disabled.
+
+config ESPDROP_BLE_WAKE_DURATION_MS
+    int "AirDrop BLE wake duration (milliseconds)"
+    depends on ESPDROP_BLE_WAKE_LAB
+    range 1000 600000
+    default 120000
 
 config ESPDROP_AWDL_MDNS_LAB
     bool "Run bounded IPv6 mDNS query through the AWDL netif"
@@ -59,6 +88,24 @@ config ESPDROP_AIRDROP_TLS_LAB
         Everyone-mode behavior. Normal and web-flasher builds must leave this
         disabled.
 
+config ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+    bool "Advertise an identity-free AirDrop receiver oracle"
+    depends on ESPDROP_AWDL_MDNS_LAB && !ESPDROP_AIRDROP_TLS_LAB
+    default n
+    help
+        Publish a legacy _airdrop._tcp service with no Apple validation
+        record so a native sender must use the anonymous Everyone path. This
+        The bounded oracle advertises native discovery and accepts TLS
+        /Discover so a stock sender can resolve its display name. It does not
+        yet accept /Ask, /Upload, or files. Normal and web-flasher builds leave
+        this disabled.
+
+config ESPDROP_AIRDROP_RECEIVER_ORACLE_PORT
+    int "Receiver oracle TLS port"
+    depends on ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+    range 1024 65535
+    default 8771
+
 config ESPDROP_AIRDROP_ASK_LAB
     bool "Issue one bounded AirDrop /Ask on a sender connection"
     depends on ESPDROP_AIRDROP_TLS_LAB
@@ -72,18 +119,35 @@ config ESPDROP_AIRDROP_ASK_LAB
         attended lab run with explicit user consent.
 
 config ESPDROP_AIRDROP_UPLOAD_LAB
-    bool "Stream one bounded hello.jpg after accepted /Ask"
+    bool "Stream one bounded outgoing file after accepted /Ask"
     depends on ESPDROP_AIRDROP_ASK_LAB
     default n
     help
-        After the user accepts the attended /Ask, stream one deterministic
-        JPEG through a 2 KiB source workspace into an ODC cpio archive. The
-        seekable fixture is zlib-counted, rewound, then streamed in the proven
-        dvzip profile. A fixed 16 KiB network staging buffer coalesces producer
-        writes; TLS writes remain below the lwIP send window. No complete file
-        or archive is buffered.
-        The accepted TLS connection and exact TransferID are reused. There is
-        no retry. Normal and web-flasher builds must leave this disabled.
+        After the user accepts the attended /Ask, stream the registered relay
+        file (or the deterministic JPEG fixture when none is registered)
+        through a 2 KiB source workspace into an ODC cpio archive. A seekable
+        source is zlib-counted and rewound. If the compressed archive fits one
+        128 KiB dvzip block and saves bytes, it is streamed in the proven zlib
+        profile; otherwise it is streamed as bounded stored dvzip blocks,
+        matching the native sender's adaptive choice for JPEG data. A fixed
+        16 KiB network staging buffer coalesces producer writes; TLS writes
+        remain below the lwIP send window. No complete file or archive is
+        buffered.
+        The exact TransferID returned by the accepted Ask is reused for a
+        sequential Upload request on the same TCP/TLS connection, matching the
+        observed anonymous native Mac-to-iPhone sender flow. There is no retry.
+        Normal and web-flasher builds must leave this disabled.
+
+config ESPDROP_RELAY_ARM_WINDOW_MS
+    int "Host relay arm window before the AirDrop sender starts (ms)"
+    depends on ESPDROP_AIRDROP_UPLOAD_LAB
+    range 0 60000
+    default 0
+    help
+        Give the USB host time after reset to replace a persisted spool with a
+        live prepared stream. The application task waits, while USB maintenance
+        remains active, and proceeds immediately once a live stream is armed.
+        Keep this zero outside the attended relay profile.
 
 config ESPDROP_AWDL_LAB_TARGET_MAC
     string "AWDL lab endpoint MAC (empty permits auto-selection)"
@@ -99,12 +163,46 @@ config ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
     depends on ESPDROP_AWDL_TX_LAB
     default n
     help
-        When no explicit target MAC is configured, remain passive until a
-        parsed MIF service response advertises _airdrop._tcp, then bind the
-        bounded experiment to that ephemeral peer in RAM. This avoids losing
-        short-lived Apple peer identities while rebuilding firmware. An
-        explicit target MAC always takes precedence. Production builds leave
-        this disabled.
+        When no explicit target MAC is configured, collect fresh parsed MIF
+        service responses advertising _airdrop._tcp, then bind the bounded
+        experiment in RAM only when proximity selection is decisive. This
+        follows rotating Apple AWDL identities without rebuilding firmware.
+        An explicit target MAC always takes precedence. Production builds
+        leave this disabled.
+
+config ESPDROP_AWDL_AUTO_TARGET_SETTLE_MS
+    int "AirDrop auto-target observation window (ms)"
+    depends on ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+    range 250 10000
+    default 1000
+    help
+        Observe candidates for this long after the first AirDrop MIF before
+        selecting. This prevents the first advertiser from winning merely by
+        arrival order.
+
+config ESPDROP_AWDL_AUTO_TARGET_MAX_AGE_MS
+    int "AirDrop auto-target candidate maximum age (ms)"
+    depends on ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+    range 500 30000
+    default 3000
+    help
+        Both the candidate's AWDL RSSI and AirDrop service evidence must have
+        been refreshed within this interval.
+
+config ESPDROP_AWDL_AUTO_TARGET_MIN_RSSI
+    int "AirDrop auto-target minimum AWDL RSSI (dBm)"
+    depends on ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+    range -127 0
+    default -70
+
+config ESPDROP_AWDL_AUTO_TARGET_MARGIN_DB
+    int "AirDrop auto-target required RSSI margin (dB)"
+    depends on ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+    range 0 40
+    default 8
+    help
+        The nearest candidate must exceed the runner-up by at least this
+        margin. Otherwise selection remains ambiguous and no connection starts.
 
 config ESPDROP_AWDL_LAB_SCHEDULE_MAC
     string "AWDL lab schedule-source MAC"

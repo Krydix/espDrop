@@ -14,6 +14,10 @@ LAB_BUILD_DIR ?= $(ROOT_DIR)/build/$(TARGET)-awdl-tx-lab
 LAB_SDKCONFIG ?= $(LAB_BUILD_DIR)/sdkconfig
 DIRECT_PEER_LAB_BUILD_DIR ?= $(ROOT_DIR)/build/$(TARGET)-awdl-direct-peer-lab
 DIRECT_PEER_LAB_SDKCONFIG ?= $(DIRECT_PEER_LAB_BUILD_DIR)/sdkconfig
+AIRDROP_RELAY_LAB_BUILD_DIR ?= $(ROOT_DIR)/build/$(TARGET)-airdrop-relay-lab
+AIRDROP_RELAY_LAB_SDKCONFIG ?= $(AIRDROP_RELAY_LAB_BUILD_DIR)/sdkconfig
+AIRDROP_RECEIVER_ORACLE_BUILD_DIR ?= $(ROOT_DIR)/build/$(TARGET)-airdrop-receiver-oracle
+AIRDROP_RECEIVER_ORACLE_SDKCONFIG ?= $(AIRDROP_RECEIVER_ORACLE_BUILD_DIR)/sdkconfig
 
 .DEFAULT_GOAL := help
 
@@ -27,7 +31,7 @@ define run_idf
 			-D SDKCONFIG="$(SDKCONFIG)" $(1)'
 endef
 
-.PHONY: help build reconfigure clean fullclean flash monitor flash-monitor ports size test test-hardware-awdl web-installer provision-wifi ota-trigger ota-local lab-awdl-tx-build lab-awdl-tx-flash lab-awdl-tx-test lab-awdl-direct-peer-build lab-awdl-direct-peer-flash lab-awdl-direct-peer-test lab-awdl-distance-one-build lab-awdl-distance-one-flash lab-awdl-distance-one-test
+.PHONY: help build reconfigure clean fullclean flash monitor flash-monitor ports size test test-host-cli test-hardware-awdl web-installer provision-wifi ota-trigger ota-local relay-upload relay-ping relay-stats relay-wake relay-peers relay-target relay-restart relay-send lab-awdl-tx-build lab-awdl-tx-flash lab-awdl-tx-test lab-awdl-direct-peer-build lab-awdl-direct-peer-flash lab-awdl-direct-peer-test lab-awdl-distance-one-build lab-awdl-distance-one-flash lab-awdl-distance-one-test lab-airdrop-relay-build lab-airdrop-relay-flash lab-airdrop-relay-test lab-airdrop-relay-live lab-airdrop-receiver-oracle-build lab-airdrop-receiver-oracle-flash lab-airdrop-receiver-oracle-test
 
 help:
 	@printf '%s\n' \
@@ -38,6 +42,17 @@ help:
 		'  make monitor PORT=/dev/... Open the serial monitor' \
 		'  make flash-monitor PORT=... Build, flash, and monitor' \
 		'  make ports                 Identify attached Espressif USB ports' \
+		'  make relay-upload PORT=... ESP_SERIAL=... FILE=...  Stage a file over USB' \
+		'  make relay-ping PORT=... ESP_SERIAL=...                  Report live firmware uptime' \
+		'  make relay-stats PORT=... ESP_SERIAL=...                 Report AWDL/TCP counters' \
+		'  make relay-wake PORT=... ESP_SERIAL=...                  Re-arm AirDrop BLE wake' \
+		'  make relay-peers PORT=... ESP_SERIAL=...                 List AirDrop candidates' \
+		'  make relay-target PORT=... ESP_SERIAL=... PEER=...       Select receiver' \
+		'  make relay-restart PORT=... ESP_SERIAL=...                Restart without flashing' \
+		'  make relay-send PORT=... ESP_SERIAL=... PEER=... FILE=...  Select and stream live' \
+		'  make lab-airdrop-relay-live PORT=... ESP_SERIAL=... PEER=... FILE=...  Flash then stream' \
+		'  make lab-airdrop-relay-test PORT=...  Send staged file in attended lab' \
+		'  make lab-airdrop-receiver-oracle-test PORT=...  Advertise anonymous receiver' \
 		'  make test-hardware-awdl PORT=... [DURATION=30]' \
 		'  make lab-awdl-tx-flash PORT=...  Flash bounded TX experiment' \
 		'  make lab-awdl-tx-test PORT=...   Flash and capture TX experiment' \
@@ -88,6 +103,12 @@ test:
 	@"$(BUILD_DIR)/host-tests/test_peer_table"
 	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
 		-I"$(ROOT_DIR)/core/include" \
+		"$(ROOT_DIR)/core/src/ble_wake_payload.c" \
+		"$(ROOT_DIR)/tests/test_ble_wake.c" \
+		-o "$(BUILD_DIR)/host-tests/test_ble_wake"
+	@"$(BUILD_DIR)/host-tests/test_ble_wake"
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic \
+		-I"$(ROOT_DIR)/core/include" \
 		-I"$(ROOT_DIR)/tapdrop/include" \
 		"$(ROOT_DIR)/tapdrop/src/correlation.c" \
 		"$(ROOT_DIR)/tests/test_tapdrop_correlation.c" \
@@ -123,6 +144,7 @@ test:
 		-I"$(ROOT_DIR)/core/include" \
 		"$(ROOT_DIR)/core/src/awdl_frame.c" \
 		"$(ROOT_DIR)/core/src/awdl_tlv.c" \
+		"$(ROOT_DIR)/core/src/awdl_service.c" \
 		"$(ROOT_DIR)/core/src/awdl_tx.c" \
 		"$(ROOT_DIR)/tests/test_awdl_tx.c" \
 		-o "$(BUILD_DIR)/host-tests/test_awdl_tx"
@@ -174,6 +196,68 @@ test:
 		"$(ROOT_DIR)/tests/test_improv_serial_codec.c" \
 		-o "$(BUILD_DIR)/host-tests/test_improv_serial_codec"
 	@"$(BUILD_DIR)/host-tests/test_improv_serial_codec"
+	@$(MAKE) --no-print-directory test-host-cli
+
+test-host-cli:
+	@cargo test --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml"
+
+relay-upload:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@test -n "$(FILE)" || { echo "set FILE=/path/to/photo.jpg"; exit 1; }
+	@cargo run --quiet --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml" -- \
+		upload --port "$(PORT)" --serial "$(ESP_SERIAL)" "$(FILE)"
+
+relay-ping:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@cargo run --quiet --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml" -- \
+		ping --port "$(PORT)" --serial "$(ESP_SERIAL)"
+
+relay-stats:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@cargo run --quiet --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml" -- \
+		stats --port "$(PORT)" --serial "$(ESP_SERIAL)"
+
+relay-wake:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@cargo run --quiet --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml" -- \
+		wake --port "$(PORT)" --serial "$(ESP_SERIAL)"
+
+relay-send:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@test -n "$(PEER)" || { echo "set PEER to the receiver AWDL MAC, AUTO, or ONLY"; exit 1; }
+	@test -n "$(FILE)" || { echo "set FILE=/path/to/photo.jpg"; exit 1; }
+	@cargo run --quiet --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml" -- \
+		send --port "$(PORT)" --serial "$(ESP_SERIAL)" \
+		--target "$(PEER)" \
+		$(if $(filter 1 yes true,$(RESTART)),--restart,) "$(FILE)"
+
+relay-peers:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@cargo run --quiet --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml" -- \
+		peers --port "$(PORT)" --serial "$(ESP_SERIAL)"
+
+relay-target:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@test -n "$(PEER)" || { echo "set PEER to a receiver AWDL MAC, AUTO, NONE, or ONLY"; exit 1; }
+	@cargo run --quiet --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml" -- \
+		target --port "$(PORT)" --serial "$(ESP_SERIAL)" --target "$(PEER)"
+
+relay-restart:
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@test -n "$(ESP_SERIAL)" || { echo "set ESP_SERIAL to the target board serial/MAC"; exit 1; }
+	@cargo run --quiet --manifest-path "$(ROOT_DIR)/host/espdrop-cli/Cargo.toml" -- \
+		restart --port "$(PORT)" --serial "$(ESP_SERIAL)"
+
+lab-airdrop-relay-live: lab-airdrop-relay-flash
+	@$(MAKE) --no-print-directory relay-send \
+		PORT="$(PORT)" ESP_SERIAL="$(ESP_SERIAL)" PEER="$(PEER)" FILE="$(FILE)"
 
 provision-wifi:
 	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
@@ -250,6 +334,56 @@ lab-awdl-direct-peer-test: lab-awdl-direct-peer-flash
 		--port "$(PORT)" \
 		--seconds "$(DURATION)" \
 		--output "$(DIRECT_PEER_LAB_BUILD_DIR)/hardware/awdl-direct-peer.json"
+
+lab-airdrop-relay-build:
+	@bash -lc 'set -eo pipefail; \
+		test -f "$(IDF_PATH)/export.sh"; \
+		if [ -n "$(IDF_PYTHON_ENV_PATH)" ]; then export IDF_PYTHON_ENV_PATH="$(IDF_PYTHON_ENV_PATH)"; fi; \
+		. "$(IDF_PATH)/export.sh" >/dev/null 2>&1; \
+		cd "$(ROOT_DIR)"; \
+		IDF_TARGET="$(TARGET)" idf.py -B "$(AIRDROP_RELAY_LAB_BUILD_DIR)" \
+			-D SDKCONFIG="$(AIRDROP_RELAY_LAB_SDKCONFIG)" \
+			-D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.airdrop-relay-lab.defaults" build'
+
+lab-airdrop-relay-flash: lab-airdrop-relay-build
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@bash -lc 'set -eo pipefail; \
+		if [ -n "$(IDF_PYTHON_ENV_PATH)" ]; then export IDF_PYTHON_ENV_PATH="$(IDF_PYTHON_ENV_PATH)"; fi; \
+		. "$(IDF_PATH)/export.sh" >/dev/null 2>&1; \
+		cd "$(ROOT_DIR)"; \
+		IDF_TARGET="$(TARGET)" idf.py -B "$(AIRDROP_RELAY_LAB_BUILD_DIR)" \
+			-D SDKCONFIG="$(AIRDROP_RELAY_LAB_SDKCONFIG)" -p "$(PORT)" flash'
+
+lab-airdrop-relay-test: lab-airdrop-relay-flash
+	@python3 "$(ROOT_DIR)/scripts/capture_awdl_probe.py" \
+		--port "$(PORT)" \
+		--seconds "$(DURATION)" \
+		--output "$(AIRDROP_RELAY_LAB_BUILD_DIR)/hardware/airdrop-relay.json"
+
+lab-airdrop-receiver-oracle-build:
+	@bash -lc 'set -eo pipefail; \
+		test -f "$(IDF_PATH)/export.sh"; \
+		if [ -n "$(IDF_PYTHON_ENV_PATH)" ]; then export IDF_PYTHON_ENV_PATH="$(IDF_PYTHON_ENV_PATH)"; fi; \
+		. "$(IDF_PATH)/export.sh" >/dev/null 2>&1; \
+		cd "$(ROOT_DIR)"; \
+		IDF_TARGET="$(TARGET)" idf.py -B "$(AIRDROP_RECEIVER_ORACLE_BUILD_DIR)" \
+			-D SDKCONFIG="$(AIRDROP_RECEIVER_ORACLE_SDKCONFIG)" \
+			-D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.airdrop-receiver-oracle.defaults" build'
+
+lab-airdrop-receiver-oracle-flash: lab-airdrop-receiver-oracle-build
+	@test -n "$(PORT)" || { echo "set PORT=/dev/..."; exit 1; }
+	@bash -lc 'set -eo pipefail; \
+		if [ -n "$(IDF_PYTHON_ENV_PATH)" ]; then export IDF_PYTHON_ENV_PATH="$(IDF_PYTHON_ENV_PATH)"; fi; \
+		. "$(IDF_PATH)/export.sh" >/dev/null 2>&1; \
+		cd "$(ROOT_DIR)"; \
+		IDF_TARGET="$(TARGET)" idf.py -B "$(AIRDROP_RECEIVER_ORACLE_BUILD_DIR)" \
+			-D SDKCONFIG="$(AIRDROP_RECEIVER_ORACLE_SDKCONFIG)" -p "$(PORT)" flash'
+
+lab-airdrop-receiver-oracle-test: lab-airdrop-receiver-oracle-flash
+	@python3 "$(ROOT_DIR)/scripts/capture_awdl_probe.py" \
+		--port "$(PORT)" \
+		--seconds "$(DURATION)" \
+		--output "$(AIRDROP_RECEIVER_ORACLE_BUILD_DIR)/hardware/airdrop-receiver-oracle.json"
 
 # Backward-compatible aliases for the superseded experiment name.
 lab-awdl-distance-one-build: lab-awdl-direct-peer-build

@@ -12,6 +12,7 @@ extern "C" {
 #define ESPDROP_AWDL_ECHO_FRAME_BYTES 96U
 #define ESPDROP_AWDL_DATA_FRAME_OVERHEAD 40U
 #define ESPDROP_ETHERNET_HEADER_BYTES 14U
+#define ESPDROP_AWDL_DATA_SUBFRAMES_MAX 16U
 
 typedef struct {
     uint8_t destination[6];
@@ -58,6 +59,7 @@ typedef enum {
     ESPDROP_AWDL_DATA_DECODE_QOS_TOO_SHORT,
     ESPDROP_AWDL_DATA_DECODE_AMSDU_TOO_SHORT,
     ESPDROP_AWDL_DATA_DECODE_AMSDU_LENGTH,
+    ESPDROP_AWDL_DATA_DECODE_AMSDU_CAPACITY,
     ESPDROP_AWDL_DATA_DECODE_LLC,
     ESPDROP_AWDL_DATA_DECODE_HEADER,
 } espdrop_awdl_data_decode_result_t;
@@ -105,6 +107,16 @@ espdrop_awdl_data_decode_result_t espdrop_awdl_decode_data_ex(
     const uint8_t *frame,
     size_t length,
     espdrop_awdl_data_t *data);
+
+/* Decode every MSDU carried by a received AWDL frame. Non-aggregated frames
+ * produce one item; QoS A-MSDU frames produce one item per subframe, matching
+ * OWL's deaggregation boundary. Returns zero and sets result on failure. */
+size_t espdrop_awdl_decode_data_frames(
+    const uint8_t *frame,
+    size_t length,
+    espdrop_awdl_data_t *data,
+    size_t capacity,
+    espdrop_awdl_data_decode_result_t *result);
 
 bool espdrop_awdl_decode_ipv6(
     const espdrop_awdl_data_t *data,

@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-25",
+  "scope": "attended Rust CLI and USB relay of a real JPEG through ESP32-S3 AirDrop to a stock iPhone",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "psramBytes": 8388608
+  },
+  "receiver": {
+    "discoverability": "Everyone mode, user configured",
+    "peerMac": "52:f4:36:b8:fd:f5",
+    "ipv6": "fe80::50f4:36ff:feb8:fdf5",
+    "port": 8770,
+    "acceptance": "explicit user acceptance"
+  },
+  "source": {
+    "fileName": "espdrop-catalina-coast.jpg",
+    "fileType": "public.jpeg",
+    "fileBytes": 53359,
+    "fileCrc32": "2fe0f495",
+    "archiveFormat": "ODC cpio",
+    "archiveBytes": 61440,
+    "dvzipEncoding": "one stored block",
+    "payloadBytes": 61444,
+    "payloadCrc32": "f8451dc9",
+    "usbChunkBytes": 4096
+  },
+  "transport": {
+    "netifMtu": 1460,
+    "netifIpv6Mtu": 1460,
+    "rawWifiInjectionLimitBytes": 1500,
+    "txQueueLocation": "PSRAM",
+    "txQueueCapacityFrames": 64,
+    "txQueueHighWaterFrames": 14,
+    "txDropped": 0,
+    "txInvalidSize": 0,
+    "txQueueFull": 0,
+    "rxDropped": 0,
+    "radioTxFailuresRecoveredByTcp": 11
+  },
+  "protocol": {
+    "tcpConnected": true,
+    "tlsConnected": true,
+    "askAccepted": true,
+    "uploadAccepted": true,
+    "uploadHttpStatus": 200,
+    "uploadRequestBytes": 61817,
+    "uploadPayloadBytes": 61444
+  },
+  "hostCompletionContract": {
+    "command": "ESPDROP STREAM RESULT",
+    "states": [
+      "none",
+      "pending",
+      "success",
+      "failed"
+    ],
+    "terminalStage": "upload",
+    "cliOutput": "AirDrop complete: HTTP 200, request=61817 bytes, payload=61444 bytes"
+  },
+  "largePayloadFollowup": {
+    "fileName": "espdrop-sonoma-large.jpg",
+    "fileBytes": 379098,
+    "fileCrc32": "6f932dd7",
+    "archiveBytes": 389120,
+    "dvzipBlocks": 3,
+    "payloadBytes": 389132,
+    "payloadCrc32": "c20884a0",
+    "redundantRadioCopiesPerTcpPayloadFrame": 2,
+    "result": "failed",
+    "failure": "ESPDROP-STREAM-CHUNK-ERROR seq=53 error=ESP_ERR_TIMEOUT",
+    "uploadHttpResponseObserved": false,
+    "transportAtFailure": {
+      "netifTxObserved": 248,
+      "netifTxDropped": 0,
+      "netifTxInvalidSize": 0,
+      "netifTxQueueFull": 0,
+      "netifTxQueueHighWater": 10,
+      "netifTxSubmitted": 450,
+      "redundantTxSubmitted": 203,
+      "dataRadioCompleted": 450,
+      "dataRadioSuccess": 323,
+      "dataRadioFailed": 127,
+      "tcpTxPayloadBytes": 257865
+    },
+    "conclusion": "Immediate duplicate radio submissions increased driver pressure and did not make sustained transfer reliable. Software queue and MTU drops remained zero; replace duplication with an evidence-backed reliability strategy and use this run as the ESP32-S3 baseline for ESP32-C5 qualification."
+  },
+  "result": {
+    "fileArrivalConfirmedByUser": true,
+    "confirmed": "The Rust CLI streamed a real JPEG through USB to the ESP32-S3, the stock iPhone accepted it through native AirDrop, the file arrived, and the CLI remained active until the ESP recorded Upload HTTP 200.",
+    "notConfirmed": "Larger multi-block payloads, sustained throughput, other file types, other iOS versions, Contacts Only, and receiver direction remain unproven."
+  }
+}

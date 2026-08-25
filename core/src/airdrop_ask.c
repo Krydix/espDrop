@@ -6,7 +6,7 @@
 
 #include "espdrop/airdrop_upload.h"
 
-#define ASK_OBJECT_COUNT 31U
+#define ASK_OBJECT_COUNT 33U
 
 typedef struct {
     uint8_t *output;
@@ -89,7 +89,8 @@ static bool ask_file_valid(const espdrop_airdrop_ask_file_t *file)
            sender_id_valid(file->sender_id) &&
            espdrop_airdrop_transfer_id_valid(file->transfer_id) &&
            file_name_valid(file->file_name) &&
-           printable_ascii(file->file_type, 1U, 127U);
+           printable_ascii(file->file_type, 1U, 127U) &&
+           file->file_size > 0U;
 }
 
 static void begin_object(
@@ -115,6 +116,24 @@ static void write_ascii(plist_writer_t *writer, const char *value)
         write_byte(writer, (uint8_t)length);
     }
     write_bytes(writer, value, length);
+}
+
+static void write_integer(plist_writer_t *writer, size_t value)
+{
+    size_t bytes = 1U;
+    uint8_t marker = 0x10U;
+    if (value > UINT32_MAX) {
+        bytes = 8U;
+        marker = 0x13U;
+    } else if (value > UINT16_MAX) {
+        bytes = 4U;
+        marker = 0x12U;
+    } else if (value > UINT8_MAX) {
+        bytes = 2U;
+        marker = 0x11U;
+    }
+    write_byte(writer, marker);
+    write_be(writer, value, bytes);
 }
 
 static void write_refs(
@@ -200,9 +219,9 @@ size_t espdrop_airdrop_build_ask_body(
     write_byte(&writer, 21U);
 
     begin_object(&writer, offsets, 17U);
-    write_byte(&writer, 0xd5U);
-    static const uint8_t file_keys[] = {22, 23, 24, 25, 26};
-    static const uint8_t file_values[] = {27, 28, 10, 29, 30};
+    write_byte(&writer, 0xd6U);
+    static const uint8_t file_keys[] = {22, 23, 24, 25, 26, 27};
+    static const uint8_t file_values[] = {28, 29, 10, 30, 31, 32};
     write_refs(&writer, file_keys, sizeof(file_keys));
     write_refs(&writer, file_values, sizeof(file_values));
     begin_object(&writer, offsets, 18U);
@@ -216,20 +235,22 @@ size_t espdrop_airdrop_build_ask_body(
 
     static const char *const entry_keys[] = {
         "ConvertMediaFormats", "FileBomPath", "FileIsDirectory", "FileName",
-        "FileType",
+        "FileSize", "FileType",
     };
-    for (size_t index = 0U; index < 5U; ++index) {
+    for (size_t index = 0U; index < 6U; ++index) {
         begin_object(&writer, offsets, index + 22U);
         write_ascii(&writer, entry_keys[index]);
     }
-    begin_object(&writer, offsets, 27U);
+    begin_object(&writer, offsets, 28U);
     write_byte(&writer, 0x10U);
     write_byte(&writer, 0U);
-    begin_object(&writer, offsets, 28U);
-    write_ascii(&writer, bom_path);
     begin_object(&writer, offsets, 29U);
-    write_ascii(&writer, file->file_name);
+    write_ascii(&writer, bom_path);
     begin_object(&writer, offsets, 30U);
+    write_ascii(&writer, file->file_name);
+    begin_object(&writer, offsets, 31U);
+    write_integer(&writer, file->file_size);
+    begin_object(&writer, offsets, 32U);
     write_ascii(&writer, file->file_type);
 
     if (writer.failed) {

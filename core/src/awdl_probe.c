@@ -2,6 +2,7 @@
 #include "espdrop/awdl_frame.h"
 #include "espdrop/awdl_data.h"
 #include "espdrop/awdl_netif.h"
+#include "espdrop/awdl_active_rx_lab.h"
 #include "espdrop/awdl_service.h"
 #include "espdrop/awdl_tlv.h"
 #include "espdrop/awdl_tx_lab.h"
@@ -120,6 +121,8 @@ typedef struct {
 } awdl_service_log_state_t;
 static awdl_service_log_state_t service_log_states[AWDL_CAPTURE_PEERS];
 static uint8_t station_mac[6];
+static espdrop_awdl_data_t
+    decoded_data_subframes[ESPDROP_AWDL_DATA_SUBFRAMES_MAX];
 
 static const uint8_t diagnostic_apple_oui[3] = {0x00, 0x17, 0xf2};
 static const uint8_t diagnostic_awdl_bssid[6] = {
@@ -155,10 +158,11 @@ static void promiscuous_data_rx(const wifi_promiscuous_pkt_t *packet)
         ++data_frames_awdl_bssid;
     }
 
-    espdrop_awdl_data_t data;
-    const espdrop_awdl_data_decode_result_t decode_result =
-        espdrop_awdl_decode_data_ex(frame, length, &data);
-    if (decode_result != ESPDROP_AWDL_DATA_DECODE_OK) {
+    espdrop_awdl_data_decode_result_t decode_result;
+    const size_t decoded_count = espdrop_awdl_decode_data_frames(
+        frame, length, decoded_data_subframes,
+        ESPDROP_AWDL_DATA_SUBFRAMES_MAX, &decode_result);
+    if (decoded_count == 0U) {
         if (!from_self && (to_self || awdl_bssid) &&
             sampled_data_candidates < AWDL_DATA_CAPTURE_LIMIT &&
             data_capture_queue != NULL) {
@@ -183,54 +187,58 @@ static void promiscuous_data_rx(const wifi_promiscuous_pkt_t *packet)
         }
         return;
     }
-    if (memcmp(data.source, station_mac, sizeof(station_mac)) == 0) {
-        return;
-    }
-
-    ++decoded_data_frames;
-    (void)espdrop_awdl_netif_receive(&data);
-    awdl_data_record_t record = {
-        .rssi = packet->rx_ctrl.rssi,
-        .channel = packet->rx_ctrl.channel,
-        .timestamp_us = packet->rx_ctrl.timestamp,
-        .frame_length = (uint16_t)(length > UINT16_MAX
-                                       ? UINT16_MAX : length),
-        .awdl_sequence = data.sequence,
-        .ethertype = data.ethertype,
-        .qos = data.qos,
-        .amsdu = data.amsdu,
-    };
-    memcpy(record.source, data.source, sizeof(record.source));
-    memcpy(record.destination, data.destination, sizeof(record.destination));
-    record.directed_to_self =
-        memcmp(record.destination, station_mac, sizeof(station_mac)) == 0;
-
-    espdrop_awdl_ipv6_t ipv6;
-    if (espdrop_awdl_decode_ipv6(&data, &ipv6)) {
-        record.ipv6 = true;
-        record.next_header = ipv6.next_header;
-        record.hop_limit = ipv6.hop_limit;
-        record.icmp_type = ipv6.icmp_type;
-        ++ipv6_data_frames;
-        if (record.directed_to_self && ipv6.next_header == 58U &&
-            ipv6.icmp_type == 136U) {
-            ++neighbor_advertisements;
-        } else if (record.directed_to_self && ipv6.next_header == 58U &&
-                   ipv6.icmp_type == 129U &&
-                   ipv6.icmp_payload_length >= 4U) {
-            record.icmp_identifier = read_be16(ipv6.icmp_payload);
-            record.icmp_sequence = read_be16(ipv6.icmp_payload + 2U);
-            ++echo_replies;
+    for (size_t index = 0U; index < decoded_count; ++index) {
+        const espdrop_awdl_data_t *data = &decoded_data_subframes[index];
+        if (memcmp(data->source, station_mac, sizeof(station_mac)) == 0) {
+            continue;
         }
-        espdrop_awdl_tcp_t tcp;
-        if (espdrop_awdl_decode_tcp(&data, &tcp)) {
-            record.tcp_source_port = tcp.source_port;
-            record.tcp_destination_port = tcp.destination_port;
-            record.tcp_flags = tcp.flags;
+
+        ++decoded_data_frames;
+        (void)espdrop_awdl_netif_receive(data);
+        awdl_data_record_t record = {
+            .rssi = packet->rx_ctrl.rssi,
+            .channel = packet->rx_ctrl.channel,
+            .timestamp_us = packet->rx_ctrl.timestamp,
+            .frame_length = (uint16_t)(length > UINT16_MAX
+                                           ? UINT16_MAX : length),
+            .awdl_sequence = data->sequence,
+            .ethertype = data->ethertype,
+            .qos = data->qos,
+            .amsdu = data->amsdu,
+        };
+        memcpy(record.source, data->source, sizeof(record.source));
+        memcpy(record.destination, data->destination,
+               sizeof(record.destination));
+        record.directed_to_self =
+            memcmp(record.destination, station_mac, sizeof(station_mac)) == 0;
+
+        espdrop_awdl_ipv6_t ipv6;
+        if (espdrop_awdl_decode_ipv6(data, &ipv6)) {
+            record.ipv6 = true;
+            record.next_header = ipv6.next_header;
+            record.hop_limit = ipv6.hop_limit;
+            record.icmp_type = ipv6.icmp_type;
+            ++ipv6_data_frames;
+            if (record.directed_to_self && ipv6.next_header == 58U &&
+                ipv6.icmp_type == 136U) {
+                ++neighbor_advertisements;
+            } else if (record.directed_to_self && ipv6.next_header == 58U &&
+                       ipv6.icmp_type == 129U &&
+                       ipv6.icmp_payload_length >= 4U) {
+                record.icmp_identifier = read_be16(ipv6.icmp_payload);
+                record.icmp_sequence = read_be16(ipv6.icmp_payload + 2U);
+                ++echo_replies;
+            }
+            espdrop_awdl_tcp_t tcp;
+            if (espdrop_awdl_decode_tcp(data, &tcp)) {
+                record.tcp_source_port = tcp.source_port;
+                record.tcp_destination_port = tcp.destination_port;
+                record.tcp_flags = tcp.flags;
+            }
         }
-    }
-    if (xQueueSend(data_queue, &record, 0) != pdTRUE) {
-        ++stats.dropped_records;
+        if (xQueueSend(data_queue, &record, 0) != pdTRUE) {
+            ++stats.dropped_records;
+        }
     }
 }
 
@@ -359,7 +367,11 @@ static void observe_awdl_peer(const awdl_probe_record_t *record)
         .id = {.length = 6},
         .signals = ESPDROP_PEER_SIGNAL_AWDL,
         .rssi = record->rssi,
-        .seen_ms = record->timestamp_us / 1000U,
+        /* rx_ctrl.timestamp is the Wi-Fi hardware/TSF timestamp and is not in
+         * the same clock domain as esp_timer_get_time(). Peer freshness is
+         * compared with AirDrop observations timestamped by esp_timer, so use
+         * the monotonic receive time for both signals. */
+        .seen_ms = record->received_at_us / 1000U,
         .awdl_mac = record->source,
         .ipv6 = ipv6,
     };
@@ -448,8 +460,16 @@ static void apply_mif_to_peer(
         if (services->has_airdrop) {
             peer->signals |= ESPDROP_PEER_SIGNAL_AIRDROP;
             peer->airdrop_seen_ms = seen_ms;
-            (void)strncpy(peer->service_id, "_airdrop._tcp.local",
-                          sizeof(peer->service_id) - 1U);
+            if (services->has_airdrop_endpoint) {
+                peer->airdrop_port = services->airdrop_port;
+                peer->airdrop_endpoint_complete = true;
+                (void)strncpy(peer->service_id,
+                              services->airdrop_service_id,
+                              sizeof(peer->service_id) - 1U);
+            } else if (!peer->airdrop_endpoint_complete) {
+                (void)strncpy(peer->service_id, "_airdrop._tcp.local",
+                              sizeof(peer->service_id) - 1U);
+            }
         }
     }
     espdrop_unlock_peers();
@@ -590,7 +610,8 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
         ESP_LOGI(TAG,
                  "MIF-SERVICES src=%02x:%02x:%02x:%02x:%02x:%02x "
                  "result=%d records=%u malformed=%u ptr=%u srv=%u txt=%u "
-                 "airdrop=%u tcp=%u udp=%u asquic=%u",
+                 "airdrop=%u tcp=%u udp=%u asquic=%u endpoint=%u "
+                 "port=%u instance=%s",
                  capture->source[0], capture->source[1], capture->source[2],
                  capture->source[3], capture->source[4], capture->source[5],
                  service_result, services.record_count,
@@ -599,13 +620,17 @@ static void process_mif_capture(const awdl_mif_capture_t *capture)
                  services.has_airdrop ? 1U : 0U,
                  services.has_airdrop_tcp ? 1U : 0U,
                  services.has_airdrop_udp ? 1U : 0U,
-                 services.has_asquic ? 1U : 0U);
+                 services.has_asquic ? 1U : 0U,
+                 services.has_airdrop_endpoint ? 1U : 0U,
+                 services.airdrop_port,
+                 services.has_airdrop_endpoint
+                     ? services.airdrop_service_id : "-");
     }
+    apply_mif_to_peer(capture->source, &mif, &services,
+                      capture->received_at_us / 1000U);
     espdrop_awdl_tx_lab_observe_mif(&action, &mif,
                                     services.has_airdrop_tcp,
                                     capture->received_at_us);
-    apply_mif_to_peer(capture->source, &mif, &services,
-                      capture->received_at_us / 1000U);
     if (!detailed) {
         return;
     }
@@ -891,6 +916,10 @@ esp_err_t espdrop_awdl_probe_start(uint8_t channel)
                         TAG, "select channel");
     ESP_RETURN_ON_ERROR(esp_wifi_set_promiscuous(true), TAG,
                         "enable promiscuous mode");
+#if CONFIG_ESPDROP_AWDL_ACTIVE_RX_LAB
+    ESP_RETURN_ON_ERROR(espdrop_awdl_active_rx_lab_enable(), TAG,
+                        "enable AWDL active-RX lab policy");
+#endif
     started = true;
     ESP_LOGI(TAG, "listening for AWDL action frames on channel %u", channel);
     return ESP_OK;

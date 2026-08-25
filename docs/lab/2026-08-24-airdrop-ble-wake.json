@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "localDate": "2026-08-24",
+  "scope": "bounded Everyone-mode AirDrop BLE wake with the iPhone share sheet closed",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "stationMac": "1c:db:d4:42:3f:a0",
+    "serialPort": "/dev/cu.usbmodem1101",
+    "normalBuildWakeEnabled": false
+  },
+  "advertisement": {
+    "legacy": true,
+    "connectable": false,
+    "appleCompanyID": "004c",
+    "continuityType": "05",
+    "recordBytes": 18,
+    "version": 1,
+    "shortHashes": "all zero",
+    "durationMilliseconds": 120000
+  },
+  "receiver": {
+    "discoverability": "Everyone mode, user configured",
+    "shareSheetOpen": false,
+    "peerMac": "52:f4:36:b8:fd:f5",
+    "instance": "0aaad3685b9c._airdrop._tcp.local",
+    "ipv6": "fe80::50f4:36ff:feb8:fdf5",
+    "port": 8770,
+    "completeEndpointAtMilliseconds": 12822
+  },
+  "transportFollowup": {
+    "firstTcpSynAtMilliseconds": 13842,
+    "oldConnectDeadlineMilliseconds": 18842,
+    "directedSynAckAtMilliseconds": 23262,
+    "synAckLatencyMilliseconds": 9420,
+    "result": "wake proven; connect deadline identified as the next independent failure"
+  },
+  "result": {
+    "confirmed": "The closed-share-sheet iPhone published a complete AirDrop TCP endpoint while espDrop emitted the bounded Continuity wake advertisement.",
+    "notConfirmed": "Other iOS versions, Contacts Only hashes, BLE-to-AWDL identity correlation, advertising lifetime minimum, and Wi-Fi/BLE throughput impact remain unproven."
+  }
+}

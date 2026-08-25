@@ -18,12 +18,14 @@ typedef struct {
     const char *transfer_id;
     const char *file_name;
     const char *file_type;
+    size_t file_size;
 } espdrop_airdrop_ask_file_t;
 
 /* Build the minimum one-file binary plist used by the first sender lab. The
- * schema includes TransferID={id=UUID} and TransferType={files={}} so a later
- * upload can be bound to the exact accepted session. Strings are deliberately
- * restricted to bounded printable ASCII in this first compatibility profile. */
+ * schema includes TransferID={id=UUID}, TransferType={files={}}, and the
+ * native FileSize metadata so a later upload can be bound to the exact
+ * accepted session. Strings are deliberately restricted to bounded printable
+ * ASCII in this first compatibility profile. */
 size_t espdrop_airdrop_build_ask_body(
     uint8_t *output,
     size_t capacity,

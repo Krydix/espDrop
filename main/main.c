@@ -16,9 +16,15 @@
 #include "nvs_flash.h"
 
 #include "espdrop/espdrop.h"
+#include "espdrop/airdrop_outgoing.h"
+#include "espdrop/airdrop_receiver_oracle.h"
 #include "espdrop/awdl_probe.h"
+#include "espdrop/awdl_tx_lab.h"
+#include "espdrop/ble_wake.h"
 #include "maintenance_serial.h"
 #include "ota_update.h"
+#include "relay_spool.h"
+#include "relay_stream.h"
 #include "tapdrop/tapdrop.h"
 #include "wifi_provision.h"
 
@@ -116,6 +122,19 @@ void app_main(void)
     ESP_LOGI(TAG, "espDrop %s", espdrop_version());
     log_board_info();
     ESP_ERROR_CHECK(ota_update_init());
+    ESP_ERROR_CHECK(relay_spool_init());
+#if !CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+    if (relay_spool_is_ready()) {
+        espdrop_airdrop_outgoing_file_t outgoing;
+        ESP_ERROR_CHECK(relay_spool_outgoing_file(&outgoing));
+        ESP_ERROR_CHECK(espdrop_airdrop_outgoing_set(&outgoing));
+    }
+#elif CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+    if (relay_spool_is_ready()) {
+        ESP_LOGW(TAG,
+                 "ignoring legacy flash-spooled file in live-stream mode");
+    }
+#endif
 
     bool ota_pending = false;
     ESP_ERROR_CHECK(ota_update_is_pending(&ota_pending));
@@ -137,11 +156,20 @@ void app_main(void)
     if (!wifi_configured) {
         ESP_ERROR_CHECK(wifi_provision_start());
         ESP_ERROR_CHECK(maintenance_serial_start(true));
+        maintenance_serial_set_application_ready(true);
         ESP_LOGW(TAG,
                  "first OTA-capable boot: provision maintenance Wi-Fi over "
                  "USB using Improv Serial");
         return;
     }
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+    /* The relay profile is a host-driven coprocessor. It discovers passively
+     * until the serial client explicitly chooses AUTO or a concrete peer. */
+    esp_log_level_set("awdl_probe", ESP_LOG_WARN);
+    esp_log_level_set("awdl_netif", ESP_LOG_WARN);
+    ESP_ERROR_CHECK(espdrop_awdl_tx_lab_set_target_mode(
+        ESPDROP_AWDL_TARGET_NONE));
+#endif
     ESP_ERROR_CHECK(maintenance_serial_start(false));
 
     const espdrop_config_t config = {
@@ -162,16 +190,41 @@ void app_main(void)
 
     ESP_LOGI(TAG, "core ready; AWDL backend=%s, NFC field GPIO=%d",
              espdrop_awdl_backend_name(), tap_config.field_gpio);
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB && CONFIG_ESPDROP_RELAY_ARM_WINDOW_MS > 0
+    ESP_LOGI(TAG, "USB live-relay arm window open for %u ms",
+             (unsigned)CONFIG_ESPDROP_RELAY_ARM_WINDOW_MS);
+    const TickType_t relay_arm_started = xTaskGetTickCount();
+    while (!relay_stream_is_armed() &&
+           xTaskGetTickCount() - relay_arm_started <
+               pdMS_TO_TICKS(CONFIG_ESPDROP_RELAY_ARM_WINDOW_MS)) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    ESP_LOGI(TAG, "USB live-relay arm window closed; live_stream=%u",
+             relay_stream_is_armed() ? 1U : 0U);
+#endif
+#if CONFIG_ESPDROP_BLE_WAKE_LAB
+    ESP_ERROR_CHECK(espdrop_ble_wake_start(
+        CONFIG_ESPDROP_BLE_WAKE_DURATION_MS));
+#endif
     if (CONFIG_ESPDROP_AWDL_PROBE) {
         ESP_ERROR_CHECK(espdrop_awdl_probe_start(CONFIG_ESPDROP_AWDL_PROBE_CHANNEL));
     }
+#if CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+    ESP_ERROR_CHECK(espdrop_airdrop_receiver_oracle_start(
+        CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_PORT));
+#endif
     ESP_ERROR_CHECK(ota_update_confirm_running());
+    maintenance_serial_set_application_ready(true);
 #if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
     ESP_LOGW(TAG,
              "attended streaming AirDrop /Ask+/Upload lab armed; "
              "retry is disabled");
 #elif CONFIG_ESPDROP_AIRDROP_ASK_LAB
     ESP_LOGW(TAG, "attended AirDrop /Ask lab armed; /Upload is disabled");
+#elif CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+    ESP_LOGW(TAG,
+             "anonymous AirDrop receiver oracle armed; TLS /Discover only, "
+             "/Ask and /Upload are disabled");
 #else
     ESP_LOGW(TAG, "protocol transport is research-stage; no AirDrop transfer is armed");
 #endif

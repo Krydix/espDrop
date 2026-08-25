@@ -1,0 +1,92 @@
+{
+  "date": "2026-08-24",
+  "scope": "one successful native Finder-to-iPhone AirDrop of the espDrop relay image",
+  "source": {
+    "host": "macOS 26.6.2 (25G83)",
+    "application": "com.apple.finder",
+    "file": "catalina-coast.jpg",
+    "fileBytes": 53359
+  },
+  "destination": {
+    "deviceType": "iPhone",
+    "accountRelationship": "same Apple account as the sender Mac",
+    "acceptance": "user confirmed transfer complete; manual versus automatic acceptance was not captured"
+  },
+  "transport": {
+    "interface": "awdl0",
+    "reportedTransport": "awdl",
+    "reportedProtocol": 1,
+    "legacy": false,
+    "quicObserved": true,
+    "quicMss": 1452,
+    "rssi": -36
+  },
+  "archive": {
+    "selectedByNativeSender": "PKZip",
+    "dvzipUsed": false
+  },
+  "timeline": [
+    {
+      "time": "05:11:54.388586+0200",
+      "event": "HELLO request sent"
+    },
+    {
+      "time": "05:11:56.044122+0200",
+      "event": "HELLO response received"
+    },
+    {
+      "time": "05:11:56.045228+0200",
+      "event": "preview data added to Ask"
+    },
+    {
+      "time": "05:11:56.045466+0200",
+      "event": "ASK request sent"
+    },
+    {
+      "time": "05:11:56.045529+0200",
+      "event": "UPLOAD request started before Ask response"
+    },
+    {
+      "time": "05:11:56.050191+0200",
+      "event": "initial Upload request sent"
+    },
+    {
+      "time": "05:11:57.002712+0200",
+      "event": "compression finished"
+    },
+    {
+      "time": "05:12:01.141408+0200",
+      "event": "Upload response received"
+    },
+    {
+      "time": "05:12:01.141571+0200",
+      "event": "Ask response received after user acceptance"
+    },
+    {
+      "time": "05:12:01.142160+0200",
+      "event": "transfer succeeded"
+    }
+  ],
+  "confirmed": [
+    "Hello precedes Ask on the current native path",
+    "Ask includes preview data for this image",
+    "Ask and Upload use separate connections derived from the established connection",
+    "Upload is pipelined while the receiver is still awaiting user consent",
+    "the Upload response arrived 163 microseconds before the Ask response",
+    "the native sender selected PKZip for this receiver",
+    "the 53359-byte file completed successfully"
+  ],
+  "notConfirmed": [
+    "anonymous Everyone-mode sender behavior",
+    "whether the same-account relationship selected protocol 1, QUIC application service, PKZip, or pipelining",
+    "whether the Ask response represented manual acceptance or same-account auto-acceptance"
+  ],
+  "comparisonWithEspDrop": [
+    "espDrop uses the receiver's legacy _airdrop._tcp TLS/TCP endpoint",
+    "espDrop currently waits for Ask HTTP 200 before starting Upload",
+    "espDrop currently sends Ask and Upload on one connection",
+    "espDrop currently uses DVZip",
+    "espDrop Ask previously omitted FileSize and preview icons"
+  ],
+  "caution": "The devices share an Apple account and the observed endpoint is protocol 1 and non-legacy. This is not the anonymous Everyone path. Its identity, QUIC, pipelining, and archive behavior must not be assumed valid for espDrop without a native sender capture against an identity-free legacy receiver."
+}

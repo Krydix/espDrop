@@ -119,7 +119,16 @@ AWDL_DATA_DIAGNOSTIC = re.compile(
     r"awdl_bssid=(?P<awdl_bssid>\d+) sampled=(?P<sampled>\d+) "
     r"decoded=(?P<decoded>\d+) ipv6=(?P<ipv6>\d+) "
     r"na=(?P<neighbor_advertisements>\d+) "
-    r"echo_reply=(?P<echo_replies>\d+)",
+    r"echo_reply=(?P<echo_replies>\d+)"
+    r"(?: ctrl=(?P<control>\d+) misc=(?P<miscellaneous>\d+) "
+    r"rx_fail=(?P<rx_failed>\d+) ht=(?P<ht>\d+) "
+    r"aggregated=(?P<aggregated>\d+)"
+    r"(?: fail_data=(?P<failed_data>\d+) "
+    r"fail_strong=(?P<failed_strong>\d+) "
+    r"fail_96_256=(?P<failed_candidate_length>\d+) "
+    r"fail_legacy=(?P<failed_legacy>\d+) "
+    r"fail_ht=(?P<failed_ht>\d+))?"
+    r")?",
     re.IGNORECASE,
 )
 
@@ -259,6 +268,17 @@ AIRDROP_TLS = re.compile(
     re.IGNORECASE,
 )
 
+AIRDROP_UPLOAD_TLS = re.compile(
+    r"AWDL-AIRDROP-UPLOAD-TLS instance=(?P<instance>[^ ]+) "
+    r"result=(?P<result>[^ ]+) error=(?P<error>-?\d+) "
+    r"version=(?P<version>[^ ]+) cipher=(?P<cipher>[^ ]+) "
+    r"verify=(?P<verify>0x[0-9a-f]+) "
+    r"peer_cert=(?P<peer_cert>\d+) "
+    r"peer_cert_bytes=(?P<peer_cert_bytes>\d+) "
+    r"connection=(?P<connection>[^ ]+)",
+    re.IGNORECASE,
+)
+
 AIRDROP_DISCOVER = re.compile(
     r"AWDL-AIRDROP-DISCOVER instance=(?P<instance>[^ ]+) "
     r"attempted=(?P<attempted>\d+) result=(?P<result>[^ ]+) "
@@ -304,7 +324,8 @@ AIRDROP_UPLOAD = re.compile(
     r"response_bytes=(?P<response_bytes>\d+) "
     r"body_bytes=(?P<body_bytes>\d+) "
     r"transfer_id=(?P<transfer_id>[^ ]+) "
-    r"continuity=(?P<continuity>\d+) retry=(?P<retry>[^ ]+)",
+    r"continuity=(?P<continuity>\d+) "
+    r"connection=(?P<connection>[^ ]+) retry=(?P<retry>[^ ]+)",
     re.IGNORECASE,
 )
 
@@ -360,6 +381,7 @@ def main() -> None:
     mdns_endpoints = []
     airdrop_tcp = []
     airdrop_tls = []
+    airdrop_upload_tls = []
     airdrop_discover = []
     airdrop_ask = []
     airdrop_upload = []
@@ -536,7 +558,7 @@ def main() -> None:
             data_diagnostic_match = AWDL_DATA_DIAGNOSTIC.search(line)
             if data_diagnostic_match:
                 awdl_data_diagnostics.append({
-                    key: int(value)
+                    key: int(value) if value is not None else None
                     for key, value in
                     data_diagnostic_match.groupdict().items()
                 })
@@ -618,6 +640,20 @@ def main() -> None:
                     tls_probe["peer_cert_bytes"]
                 )
                 airdrop_tls.append(tls_probe)
+            upload_tls_match = AIRDROP_UPLOAD_TLS.search(line)
+            if upload_tls_match:
+                upload_tls_probe = upload_tls_match.groupdict()
+                upload_tls_probe["error"] = int(upload_tls_probe["error"])
+                upload_tls_probe["verify"] = int(
+                    upload_tls_probe["verify"], 16
+                )
+                upload_tls_probe["peer_cert"] = int(
+                    upload_tls_probe["peer_cert"]
+                )
+                upload_tls_probe["peer_cert_bytes"] = int(
+                    upload_tls_probe["peer_cert_bytes"]
+                )
+                airdrop_upload_tls.append(upload_tls_probe)
             discover_match = AIRDROP_DISCOVER.search(line)
             if discover_match:
                 discover = discover_match.groupdict()
@@ -722,6 +758,7 @@ def main() -> None:
             "airdropEndpoints": mdns_endpoints,
             "airdropTcp": airdrop_tcp,
             "airdropTls": airdrop_tls,
+            "airdropUploadTls": airdrop_upload_tls,
             "airdropDiscover": airdrop_discover,
             "airdropAsk": airdrop_ask,
             "airdropUpload": airdrop_upload,

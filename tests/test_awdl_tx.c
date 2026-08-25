@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "espdrop/awdl_tx.h"
+#include "espdrop/awdl_service.h"
 
 static uint16_t read_le16(const uint8_t *value)
 {
@@ -158,6 +159,7 @@ int main(void)
 
     bool found_current_arpa = false;
     bool found_current_version = false;
+    bool found_known_working_ht = false;
     espdrop_awdl_tlv_iterator_t iterator;
     espdrop_awdl_tlv_iterator_init(&iterator, action.tlv_data,
                                    action.tlv_length);
@@ -176,6 +178,12 @@ int main(void)
             assert(memcmp(view.value + 2, "espDrop", 7) == 0);
             found_current_arpa = true;
         }
+        if (view.type == 7U) {
+            assert(view.length == 9U);
+            assert(view.value[5] == 0xffU);
+            assert(view.value[6] == 0xffU);
+            found_known_working_ht = true;
+        }
         if (view.type == 21U) {
             assert(view.length == 2U);
             assert(view.value[0] == 0xa0U);
@@ -185,6 +193,27 @@ int main(void)
     }
     assert(found_current_arpa);
     assert(found_current_version);
+    assert(found_known_working_ht);
+
+    state.advertise_airdrop_tcp = true;
+    state.airdrop_port = 8771U;
+    assert(espdrop_awdl_build_action(
+               frame, sizeof(frame), &length, &state,
+               ESPDROP_AWDL_ACTION_MIF, 1000000ULL, 8U) ==
+           ESPDROP_AWDL_BUILD_OK);
+    assert(length == sizeof(frame));
+    assert(espdrop_awdl_decode_action(frame, length, &action));
+    espdrop_awdl_service_profile_t advertised;
+    assert(espdrop_awdl_scan_service_responses(
+               action.tlv_data, action.tlv_length, &advertised) ==
+           ESPDROP_AWDL_PARSE_OK);
+    assert(advertised.record_count == 3U);
+    assert(advertised.ptr_count == 1U);
+    assert(advertised.srv_count == 1U);
+    assert(advertised.txt_count == 1U);
+    assert(advertised.has_airdrop_tcp);
+    state.advertise_airdrop_tcp = false;
+    state.airdrop_port = 0U;
 
     size_t psf_length = 0;
     assert(espdrop_awdl_build_action(

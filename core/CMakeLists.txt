@@ -4,6 +4,10 @@ idf_component_register(
         "src/airdrop_ask.c"
         "src/airdrop_http.c"
         "src/airdrop_upload.c"
+        "src/airdrop_outgoing.c"
+        "src/airdrop_receiver_oracle.c"
+        "src/ble_wake_payload.c"
+        "src/ble_wake_nimble.c"
         "src/airdrop_tls.c"
         "src/awdl_frame.c"
         "src/awdl_data.c"
@@ -14,13 +18,14 @@ idf_component_register(
         "src/awdl_election.c"
         "src/awdl_tx.c"
         "src/awdl_tx_lab.c"
+        "src/awdl_active_rx_lab.c"
         "src/awdl_probe.c"
         "src/peer_table.c"
     INCLUDE_DIRS "include"
-    REQUIRES esp_timer esp_wifi esp_netif esp_event esp_rom lwip mbedtls
+    REQUIRES bt esp_timer esp_wifi esp_netif esp_event esp_rom lwip mbedtls
 )
 
-if(CONFIG_ESPDROP_AIRDROP_TLS_LAB)
+if(CONFIG_ESPDROP_AIRDROP_TLS_LAB OR CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB)
     target_add_binary_data(
         ${COMPONENT_LIB} "certs/airdrop_lab_certificate.pem" TEXT)
     target_add_binary_data(

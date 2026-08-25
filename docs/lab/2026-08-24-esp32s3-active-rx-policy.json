@@ -1,0 +1,70 @@
+{
+  "schema": "espdrop.lab.active-rx-policy.v1",
+  "date": "2026-08-24",
+  "target": {
+    "chip": "ESP32-S3 revision 0.2",
+    "baseMac": "1c:db:d4:42:3f:a0",
+    "espIdf": "5.4"
+  },
+  "question": "Can an exported but undocumented ESP-IDF station RX policy make promiscuous AWDL reception ACK-capable?",
+  "method": {
+    "bssid": "00:25:00:ff:94:73",
+    "source": "Locally traced ESP-IDF 5.4 ESP32-S3 libnet80211/libpp call graph",
+    "preAuthenticationSequence": [
+      "ic_set_bssid(WIFI_IF_STA, awdl_bssid)",
+      "wifi_set_rx_policy(5)"
+    ],
+    "authenticatedSequence": [
+      "ic_set_bssid(WIFI_IF_STA, awdl_bssid)",
+      "wifi_set_rx_policy(5)",
+      "wifi_set_rx_policy(7)"
+    ],
+    "rawRegistersWrittenByEspDrop": false,
+    "normalFirmwareEnabled": false,
+    "webFlasherFirmwareEnabled": false
+  },
+  "runs": [
+    {
+      "profile": "station-pre-authentication",
+      "durationSeconds": 75,
+      "decodedAwdlActions": 2272,
+      "rawDataFrames": 187,
+      "decodedAwdlIpv6Frames": 30,
+      "multicastMdnsPackets": 16,
+      "directedTcpSynFramesSubmitted": 22,
+      "framesAddressedToEsp": 0,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "tcpConnected": false,
+      "resetOrCrash": false,
+      "buildArtifact": "build/esp32s3-airdrop-relay-lab/hardware/dynamic-macos-active-rx-policy.json"
+    },
+    {
+      "profile": "station-authenticated",
+      "durationSeconds": 60,
+      "decodedAwdlActions": 1142,
+      "rawDataFrames": 79,
+      "decodedAwdlIpv6Frames": 23,
+      "directedTcpSynFramesSubmitted": 42,
+      "framesAddressedToEsp": 0,
+      "neighborAdvertisements": 0,
+      "echoReplies": 0,
+      "tcpConnected": false,
+      "resetOrCrash": false,
+      "buildArtifact": "build/esp32s3-airdrop-relay-lab/hardware/dynamic-macos-active-rx-authenticated.json"
+    }
+  ],
+  "conclusion": {
+    "confirmed": [
+      "The private semantic wrappers are callable and stable in this bounded IDF 5.4 experiment.",
+      "Both profiles preserve passive AWDL action and multicast data reception.",
+      "Neither profile enables directed reception or automatic ACK behavior against the selected Mac AirDrop peer."
+    ],
+    "notClaimed": [
+      "This does not disprove the previously captured ESP-to-iPhone bidirectional path.",
+      "This does not prove that no unexported HAL or firmware mechanism exists.",
+      "ESP-IDF versions other than 5.4 were not tested."
+    ],
+    "decision": "Keep the implementation behind a default-off, version-pinned lab flag and do not use it in the relay profile."
+  }
+}

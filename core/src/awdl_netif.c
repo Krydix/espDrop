@@ -6,12 +6,15 @@
 #include <string.h>
 
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif_net_stack.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "espdrop/airdrop_mdns.h"
+#include "espdrop/airdrop_outgoing.h"
 #include "espdrop/airdrop_tls.h"
+#include "espdrop/ble_wake.h"
 #include "espdrop/espdrop.h"
 #include "espdrop/awdl_tx_lab.h"
 #include "freertos/FreeRTOS.h"
@@ -24,10 +27,12 @@
 #include "lwip/sockets.h"
 #include "lwip/tcpip.h"
 
-#define AWDL_NETIF_QUEUE_DEPTH 8U
+#define AWDL_NETIF_RX_QUEUE_DEPTH 8U
+#define AWDL_NETIF_TX_QUEUE_DEPTH 64U
 #define AWDL_NETIF_MAX_ETHERNET_BYTES 1474U
 #define AWDL_NETIF_RAW_FRAME_BYTES 1500U
 #define AWDL_NETIF_MTU 1460U
+#define AWDL_NETIF_TCP_PAYLOAD_COPIES 2U
 #define AWDL_MDNS_PORT 5353U
 #define AWDL_MDNS_QUERY_ATTEMPTS 6U
 #define AWDL_MDNS_RESOLVE_BUDGET 1U
@@ -60,6 +65,8 @@ static awdl_ethernet_frame_t rx_task_scratch;
 static awdl_ethernet_frame_t promiscuous_rx_scratch;
 #if CONFIG_ESPDROP_AWDL_TX_LAB
 static QueueHandle_t tx_queue;
+static StaticQueue_t tx_queue_control;
+static uint8_t *tx_queue_storage;
 static awdl_ethernet_frame_t driver_tx_scratch;
 static awdl_ethernet_frame_t radio_tx_scratch;
 static uint8_t radio_raw_scratch[AWDL_NETIF_RAW_FRAME_BYTES];
@@ -124,6 +131,8 @@ static esp_err_t driver_transmit(void *handle, void *buffer, size_t length)
     if (buffer == NULL || length < ESPDROP_ETHERNET_HEADER_BYTES ||
         length > AWDL_NETIF_MAX_ETHERNET_BYTES) {
         ++stats.tx_dropped;
+        ++stats.tx_invalid_size;
+        stats.tx_last_dropped_length = length;
         return ESP_ERR_INVALID_SIZE;
     }
 #if CONFIG_ESPDROP_AWDL_TX_LAB
@@ -132,9 +141,15 @@ static esp_err_t driver_transmit(void *handle, void *buffer, size_t length)
     if (tx_queue == NULL ||
         xQueueSend(tx_queue, &driver_tx_scratch, 0) != pdTRUE) {
         ++stats.tx_dropped;
+        ++stats.tx_queue_full;
+        stats.tx_last_dropped_length = length;
         return ESP_ERR_NO_MEM;
     }
     ++stats.tx_enqueued;
+    const UBaseType_t queued = uxQueueMessagesWaiting(tx_queue);
+    if (queued > stats.tx_queue_high_water) {
+        stats.tx_queue_high_water = queued;
+    }
 #else
     ++stats.tx_suppressed;
 #endif
@@ -197,8 +212,21 @@ static void join_mld_group(void *argument)
 
 static espdrop_airdrop_mdns_result_t mdns_cache;
 static espdrop_airdrop_mdns_result_t mdns_parse_scratch;
+static bool airdrop_mif_probe_started;
+static bool airdrop_mdns_probe_started;
+static uint64_t airdrop_probe_requested_ms;
 
+void espdrop_awdl_netif_request_airdrop_probe(void)
+{
+    airdrop_mif_probe_started = false;
+    airdrop_mdns_probe_started = false;
+    airdrop_probe_requested_ms =
+        (uint64_t)esp_timer_get_time() / 1000U;
+}
+
+#if !CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
 static void probe_airdrop_tcp(int interface_index);
+#endif
 
 static void log_service(const espdrop_airdrop_service_t *service)
 {
@@ -222,6 +250,7 @@ static void log_service(const espdrop_airdrop_service_t *service)
 static bool publish_complete_service(
     const espdrop_airdrop_service_t *service)
 {
+    const bool first_publish = !service->endpoint_published;
     espdrop_peer_table_t *table = espdrop_peers();
     if (table == NULL || !espdrop_lock_peers()) {
         return false;
@@ -243,16 +272,22 @@ static bool publish_complete_service(
     ip6_addr_t ipv6;
     memcpy(&ipv6, service->ipv6, sizeof(service->ipv6));
     (void)inet6_ntoa_r(ipv6, address, sizeof(address));
-    ESP_LOGW(TAG,
-             "AWDL-AIRDROP-ENDPOINT instance=%s ipv6=%s port=%u "
-             "peer=%02x:%02x:%02x:%02x:%02x:%02x complete=1",
-             service->instance, address, service->port,
-             peer_mac[0], peer_mac[1], peer_mac[2], peer_mac[3],
-             peer_mac[4], peer_mac[5]);
+    if (first_publish) {
+        ESP_LOGW(TAG,
+                 "AWDL-AIRDROP-ENDPOINT instance=%s ipv6=%s port=%u "
+                 "peer=%02x:%02x:%02x:%02x:%02x:%02x complete=1",
+                 service->instance, address, service->port,
+                 peer_mac[0], peer_mac[1], peer_mac[2], peer_mac[3],
+                 peer_mac[4], peer_mac[5]);
+    }
     return true;
 }
 
-static bool receive_mdns_packet(int socket_fd)
+static bool receive_mdns_packet(
+    int socket_fd,
+    const struct sockaddr_in6 *announcement_destination,
+    const uint8_t *announcement,
+    size_t announcement_bytes)
 {
     static uint8_t packet[768];
     struct sockaddr_in6 source = {0};
@@ -282,6 +317,44 @@ static bool receive_mdns_packet(int socket_fd)
              (int)received, (flags & 0x8000U) != 0U, questions, answers,
              authority, additional, (unsigned long)stats.mdns_packets);
 
+#if CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+    const espdrop_mdns_query_response_t response_mode =
+        espdrop_airdrop_mdns_query_response(packet, (size_t)received);
+    if (announcement_destination != NULL && announcement != NULL &&
+        announcement_bytes != 0U &&
+        response_mode != ESPDROP_MDNS_QUERY_RESPONSE_NONE) {
+        struct sockaddr_in6 response_destination =
+            *announcement_destination;
+        if (response_mode == ESPDROP_MDNS_QUERY_RESPONSE_UNICAST) {
+            response_destination = source;
+            if (response_destination.sin6_scope_id == 0U) {
+                response_destination.sin6_scope_id =
+                    announcement_destination->sin6_scope_id;
+            }
+        }
+        ++stats.airdrop_receiver_queries;
+        const ssize_t sent = sendto(
+            socket_fd, announcement, announcement_bytes, 0,
+            (const struct sockaddr *)&response_destination,
+            sizeof(response_destination));
+        if (sent == (ssize_t)announcement_bytes) {
+            ++stats.airdrop_receiver_announcements;
+        }
+        ESP_LOGW(TAG,
+                 "AWDL-AIRDROP-RECEIVER query=%lu announcement=%lu "
+                 "mode=%s bytes=%d error=%d",
+                 (unsigned long)stats.airdrop_receiver_queries,
+                 (unsigned long)stats.airdrop_receiver_announcements,
+                 response_mode == ESPDROP_MDNS_QUERY_RESPONSE_UNICAST
+                     ? "unicast" : "multicast",
+                 (int)sent, sent < 0 ? errno : 0);
+    }
+#else
+    (void)announcement_destination;
+    (void)announcement;
+    (void)announcement_bytes;
+#endif
+
     if (!espdrop_airdrop_mdns_parse(packet, (size_t)received,
                                     &mdns_parse_scratch)) {
         ESP_LOGW(TAG, "AWDL-MDNS-PARSE bytes=%d result=invalid", (int)received);
@@ -294,27 +367,36 @@ static bool receive_mdns_packet(int socket_fd)
         espdrop_airdrop_service_t *service = &mdns_cache.services[index];
         if (espdrop_airdrop_service_complete(service)) {
             ++stats.mdns_complete_services;
-            if (!service->endpoint_published &&
-                publish_complete_service(service)) {
+            /* Re-apply complete endpoints to refresh their observation time.
+             * Selection deliberately waits for a proximity settle window, so
+             * a one-shot publication can occur too early to choose anything. */
+            if (publish_complete_service(service)) {
                 service->endpoint_published = true;
             }
         }
         log_service(service);
     }
+    if (stats.mdns_complete_services != 0U) {
+        (void)espdrop_awdl_tx_lab_consider_airdrop_endpoints(
+            (uint64_t)esp_timer_get_time());
+    }
     return true;
 }
 
-static void probe_airdrop_tcp_service(
+#if !CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+static int connect_airdrop_tcp_service(
     int interface_index,
-    const espdrop_airdrop_service_t *service)
+    const espdrop_airdrop_service_t *service,
+    unsigned attempt)
 {
     ++stats.airdrop_tcp_attempts;
     const int socket_fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
     if (socket_fd < 0) {
         ESP_LOGE(TAG,
-                 "AWDL-AIRDROP-TCP instance=%s result=socket-error error=%d",
-                 service->instance, errno);
-        return;
+                 "AWDL-AIRDROP-TCP instance=%s attempt=%u "
+                 "result=socket-error error=%d",
+                 service->instance, attempt, errno);
+        return -1;
     }
     const struct timeval timeout = {.tv_sec = 6, .tv_usec = 0};
     (void)setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO,
@@ -337,7 +419,10 @@ static void probe_airdrop_tcp_service(
         fd_set write_set;
         FD_ZERO(&write_set);
         FD_SET(socket_fd, &write_set);
-        struct timeval connect_timeout = {.tv_sec = 6, .tv_usec = 0};
+        /* The closed-share-sheet iOS 26 wake profile has answered from 2 to
+         * 32.5 seconds after the first SYN on hardware. Keep this bounded,
+         * but retain the PCB long enough to admit that observed late reply. */
+        struct timeval connect_timeout = {.tv_sec = 45, .tv_usec = 0};
         const int selected = select(socket_fd + 1, NULL, &write_set, NULL,
                                     &connect_timeout);
         if (selected > 0) {
@@ -360,12 +445,55 @@ static void probe_airdrop_tcp_service(
     memcpy(&ipv6, service->ipv6, sizeof(service->ipv6));
     (void)inet6_ntoa_r(ipv6, address, sizeof(address));
     ESP_LOGW(TAG,
-             "AWDL-AIRDROP-TCP instance=%s target=%s ipv6=%s port=%u "
-             "result=%s error=%d",
-             service->instance, service->target, address, service->port,
-             result == 0 ? "connected" : "failed", connection_error);
+             "AWDL-AIRDROP-TCP instance=%s attempt=%u target=%s ipv6=%s "
+             "port=%u result=%s error=%d",
+             service->instance, attempt, service->target, address,
+             service->port, result == 0 ? "connected" : "failed",
+             connection_error);
+    if (result != 0) {
+        close(socket_fd);
+        return -1;
+    }
+    return socket_fd;
+}
+
+static void probe_airdrop_tcp_service(
+    int interface_index,
+    const espdrop_airdrop_service_t *service)
+{
+#if CONFIG_ESPDROP_BLE_WAKE_LAB
+    /* A fresh receiver publication is the wake-complete boundary. Release
+     * NimBLE before opening TCP so Wi-Fi owns the coexistence radio for AWDL
+     * data, TLS, and upload. */
+    if (espdrop_ble_wake_active()) {
+        const int wake_stop_result = espdrop_ble_wake_stop();
+        if (wake_stop_result != ESP_OK) {
+            ESP_LOGW(TAG, "AirDrop BLE wake stop failed: %s",
+                     esp_err_to_name(wake_stop_result));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(50U));
+        }
+    }
+    /* lwIP caps SYN retransmissions at 12. Retain bounded fresh PCBs for a
+     * receiver that takes several AWDL windows to admit the sender. */
+    const unsigned maximum_attempts = 4U;
+#else
+    const unsigned maximum_attempts = 1U;
+#endif
+    int socket_fd = -1;
+    for (unsigned attempt = 1U;
+         attempt <= maximum_attempts && socket_fd < 0; ++attempt) {
+        socket_fd = connect_airdrop_tcp_service(
+            interface_index, service, attempt);
+#if CONFIG_ESPDROP_BLE_WAKE_LAB
+        if (socket_fd < 0 && attempt < maximum_attempts &&
+            espdrop_ble_wake_active()) {
+            vTaskDelay(pdMS_TO_TICKS(250U));
+        }
+#endif
+    }
 #if CONFIG_ESPDROP_AIRDROP_TLS_LAB
-    if (result == 0) {
+    if (socket_fd >= 0) {
         ++stats.airdrop_tls_attempts;
         espdrop_airdrop_tls_result_t tls;
         espdrop_airdrop_discover_result_t discover;
@@ -374,6 +502,7 @@ static void probe_airdrop_tcp_service(
         memset(&discover, 0, sizeof(discover));
 #if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
         espdrop_airdrop_upload_result_t upload;
+        memset(&upload, 0, sizeof(upload));
 #endif
 #endif
         /* A TLS flight can span several AWDL availability windows. The
@@ -382,9 +511,56 @@ static void probe_airdrop_tcp_service(
          * flight and the receiver's Finished message. */
         const bool tls_connected =
 #if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
-            espdrop_airdrop_tls_ask_upload_probe(
-                socket_fd, service->target, service->port, 12000U, 30000U,
-                30000U, &tls, &ask, &upload);
+            ({
+                espdrop_airdrop_outgoing_file_t outgoing;
+                const bool has_outgoing =
+                    espdrop_airdrop_outgoing_acquire(&outgoing);
+                bool sent;
+                if (has_outgoing) {
+                    /* The anonymous native Mac sender creates a second
+                     * Network.framework request object for Upload, but that
+                     * object joins the accepted Ask's HTTP/1, TCP, and TLS
+                     * flow. Mirror the wire behavior directly: sequential
+                     * requests on this socket with one TransferID. */
+                    sent = espdrop_airdrop_tls_ask_upload_stream_probe(
+                        socket_fd, service->target, service->port, 12000U,
+                        30000U, 120000U, &outgoing, &tls, &ask, &upload);
+                } else {
+                    sent = espdrop_airdrop_tls_ask_upload_probe(
+                        socket_fd, service->target, service->port, 12000U,
+                        30000U, 30000U, &tls, &ask, &upload);
+                }
+                if (has_outgoing) {
+                    espdrop_airdrop_outgoing_result_t completion = {
+                        .state = ESPDROP_AIRDROP_OUTGOING_RESULT_FAILED,
+                    };
+                    if (!tls.connected) {
+                        completion.stage = ESPDROP_AIRDROP_OUTGOING_STAGE_TLS;
+                        completion.error = tls.error;
+                    } else if (!ask.response_complete ||
+                               ask.http_status != 200U) {
+                        completion.stage = ESPDROP_AIRDROP_OUTGOING_STAGE_ASK;
+                        completion.error = ask.error;
+                        completion.http_status = ask.http_status;
+                        completion.request_bytes = ask.request_bytes;
+                    } else {
+                        completion.stage =
+                            ESPDROP_AIRDROP_OUTGOING_STAGE_UPLOAD;
+                        completion.error = upload.error;
+                        completion.http_status = upload.http_status;
+                        completion.request_bytes = upload.request_bytes;
+                        completion.payload_bytes = upload.payload_bytes;
+                        if (upload.response_complete &&
+                            upload.http_status == 200U) {
+                            completion.state =
+                                ESPDROP_AIRDROP_OUTGOING_RESULT_SUCCESS;
+                        }
+                    }
+                    espdrop_airdrop_outgoing_complete(&completion);
+                    espdrop_airdrop_outgoing_release();
+                }
+                sent;
+            });
 #elif CONFIG_ESPDROP_AIRDROP_ASK_LAB
             espdrop_airdrop_tls_ask_probe(
                 socket_fd, service->target, service->port, 12000U, 30000U,
@@ -490,7 +666,7 @@ static void probe_airdrop_tcp_service(
                  "dvzip_blocks=%u stored=%u workspace=%u crc32=%08lx "
                  "stream_status=%d "
                  "response_bytes=%u body_bytes=%u transfer_id=%s "
-                 "continuity=%u retry=disabled",
+                 "continuity=%u connection=%s retry=disabled",
                  service->instance, upload.attempted ? 1U : 0U,
                  upload_accepted ? "accepted" :
                      (upload.response_complete ? "rejected" : "failed"),
@@ -507,34 +683,136 @@ static void probe_airdrop_tcp_service(
                  upload.stream_status,
                  (unsigned)upload.response_bytes,
                  (unsigned)upload.body_bytes, upload.transfer_id,
-                 upload.transfer_id_continuity ? 1U : 0U);
+                 upload.transfer_id_continuity ? 1U : 0U,
+                 "ask-socket");
 #endif
 #endif
     }
 #endif
-    close(socket_fd);
+    if (socket_fd >= 0) {
+        close(socket_fd);
+    }
 }
 
 static void probe_airdrop_tcp(int interface_index)
 {
+#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+    /* In serial-controlled relay mode, discovery and target selection may run
+     * before a host has armed a file. Never fall back to the built-in lab
+     * fixture or present a prompt the host did not request. */
+    if (!espdrop_airdrop_outgoing_ready()) {
+        return;
+    }
+#endif
     uint8_t configured_target[6];
     const bool has_configured_target =
         espdrop_awdl_tx_lab_target(configured_target);
+#if CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+    /* A multicast service cache can become complete before proximity
+     * selection settles. Do not open a connection to an arbitrary cached
+     * endpoint; wait until the selector installs a concrete AWDL target. */
+    if (!has_configured_target) {
+        return;
+    }
+#endif
     uint8_t configured_address[16];
+    char configured_instance[ESPDROP_SERVICE_ID_MAX_BYTES] = {0};
     if (has_configured_target) {
         espdrop_awdl_link_local_from_mac(configured_target,
                                          configured_address);
+        /* A stream generation starts BLE wake and invalidates any cached
+         * endpoint. Do not stop BLE or consume TCP retries until this exact
+         * target advertises AirDrop again after that generation began. */
+        bool fresh_endpoint = false;
+        espdrop_peer_id_t id = {.length = 6U};
+        memcpy(id.bytes, configured_target, sizeof(configured_target));
+        espdrop_peer_table_t *table = espdrop_peers();
+        if (table != NULL && espdrop_lock_peers()) {
+            const espdrop_peer_t *peer =
+                espdrop_peer_table_find(table, &id);
+            fresh_endpoint =
+                peer != NULL && peer->airdrop_endpoint_complete &&
+                peer->airdrop_port != 0U &&
+                peer->airdrop_seen_ms >= airdrop_probe_requested_ms;
+            if (fresh_endpoint) {
+                (void)strncpy(configured_instance, peer->service_id,
+                              sizeof(configured_instance) - 1U);
+            }
+            espdrop_unlock_peers();
+        }
+        if (!fresh_endpoint) {
+            return;
+        }
+        /* A receiver can publish its service before election convergence.
+         * Starting connect() at that point burns lwIP's bounded SYN/PCB
+         * retries while our transmitter has no common availability window.
+         * Wait until the selected peer and our sender are in the same live
+         * synchronization tree; the queued SYN can then leave in the next
+         * strictly common channel window. */
+        if (!espdrop_awdl_tx_lab_target_is_sync_master()) {
+            return;
+        }
     }
+    const espdrop_airdrop_service_t *matched_mdns = NULL;
     for (size_t index = 0U; index < mdns_cache.service_count; ++index) {
         const espdrop_airdrop_service_t *service = &mdns_cache.services[index];
         if (espdrop_airdrop_service_complete(service) &&
             (!has_configured_target ||
              memcmp(service->ipv6, configured_address,
-                    sizeof(configured_address)) == 0)) {
-            probe_airdrop_tcp_service(interface_index, service);
+                    sizeof(configured_address)) == 0) &&
+            (configured_instance[0] == '\0' ||
+             strncmp(service->instance, configured_instance,
+                     strlen(configured_instance)) == 0)) {
+            matched_mdns = service;
+            break;
         }
     }
+    if (matched_mdns != NULL) {
+        if (!airdrop_mdns_probe_started) {
+            airdrop_mdns_probe_started = true;
+            probe_airdrop_tcp_service(interface_index, matched_mdns);
+        }
+        return;
+    }
+    if (!has_configured_target || airdrop_mif_probe_started) {
+        return;
+    }
+
+    /* Full Apple MIFs commonly include their PTR/SRV/TXT records. When mDNS
+     * does not answer, connect using that SRV port and the originating AWDL
+     * peer's link-local address. */
+    espdrop_airdrop_service_t mif_service = {0};
+    espdrop_peer_id_t id = {.length = 6U};
+    memcpy(id.bytes, configured_target, sizeof(configured_target));
+    espdrop_peer_table_t *table = espdrop_peers();
+    if (table == NULL || !espdrop_lock_peers()) {
+        return;
+    }
+    const espdrop_peer_t *peer = espdrop_peer_table_find(table, &id);
+    if (peer != NULL && peer->airdrop_endpoint_complete &&
+        peer->airdrop_port != 0U) {
+        (void)strncpy(mif_service.instance, peer->service_id,
+                      sizeof(mif_service.instance) - 1U);
+        (void)strncpy(mif_service.target, "mif-awdl-peer.local",
+                      sizeof(mif_service.target) - 1U);
+        memcpy(mif_service.ipv6, peer->ipv6, sizeof(mif_service.ipv6));
+        mif_service.port = peer->airdrop_port;
+        mif_service.has_ptr = true;
+        mif_service.has_srv = true;
+        mif_service.has_txt = true;
+        mif_service.has_ipv6 = true;
+    }
+    espdrop_unlock_peers();
+    if (espdrop_airdrop_service_complete(&mif_service)) {
+        airdrop_mif_probe_started = true;
+        ESP_LOGW(TAG,
+                 "AWDL-AIRDROP-ENDPOINT instance=%s port=%u "
+                 "evidence=mif-service-response",
+                 mif_service.instance, mif_service.port);
+        probe_airdrop_tcp_service(interface_index, &mif_service);
+    }
 }
+#endif
 
 static ssize_t send_mdns_question(
     int socket_fd,
@@ -702,6 +980,32 @@ static void mdns_task(void *argument)
     ESP_LOGI(TAG, "AWDL-MDNS destination=multicast ipv6=ff02::fb port=%u",
              AWDL_MDNS_PORT);
 
+    static uint8_t receiver_announcement[512];
+    size_t receiver_announcement_bytes = 0U;
+#if CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+    char service_id[13];
+    (void)snprintf(service_id, sizeof(service_id),
+                   "%02x%02x%02x%02x%02x%02x",
+                   station_mac[0], station_mac[1], station_mac[2],
+                   station_mac[3], station_mac[4], station_mac[5]);
+    if (!espdrop_airdrop_mdns_build_announcement(
+            receiver_announcement, sizeof(receiver_announcement),
+            &receiver_announcement_bytes, service_id, "espdrop",
+            CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_PORT,
+            ESPDROP_AIRDROP_RECEIVER_FLAGS_ANONYMOUS,
+            (const uint8_t *)link_local.addr)) {
+        ESP_LOGE(TAG, "could not build AirDrop receiver announcement");
+        close(socket_fd);
+        vTaskDelete(NULL);
+        return;
+    }
+    ESP_LOGW(TAG,
+             "anonymous AirDrop receiver oracle prepared instance=%s "
+             "port=%u flags=%u identity=none",
+             service_id, CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_PORT,
+             ESPDROP_AIRDROP_RECEIVER_FLAGS_ANONYMOUS);
+#endif
+
     /* Do not enqueue DNS traffic until the selected peer has supplied a valid
      * schedule and the bounded transmitter has drained at least one netif
      * frame. A fixed delay races peer discovery and can fill lwIP's queue. */
@@ -719,6 +1023,18 @@ static void mdns_task(void *argument)
     ESP_LOGI(TAG, "AWDL-MDNS transmit window ready wait_ms=%u",
              ready_waits * 250U);
 
+#if CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+    const ssize_t announced = sendto(
+        socket_fd, receiver_announcement, receiver_announcement_bytes, 0,
+        (const struct sockaddr *)&destination, sizeof(destination));
+    if (announced == (ssize_t)receiver_announcement_bytes) {
+        ++stats.airdrop_receiver_announcements;
+    }
+    ESP_LOGW(TAG,
+             "AWDL-AIRDROP-RECEIVER initial-announcement bytes=%d error=%d",
+             (int)announced, announced < 0 ? errno : 0);
+#endif
+
     for (unsigned attempt = 1; attempt <= AWDL_MDNS_QUERY_ATTEMPTS;
          ++attempt) {
         const ssize_t sent = send_mdns_question(
@@ -729,27 +1045,30 @@ static void mdns_task(void *argument)
 
         for (unsigned receive_attempt = 0; receive_attempt < 4U;
              ++receive_attempt) {
-            (void)receive_mdns_packet(socket_fd);
+            (void)receive_mdns_packet(
+                socket_fd, &destination, receiver_announcement,
+                receiver_announcement_bytes);
         }
         send_resolution_questions(socket_fd, &destination, attempt);
         for (unsigned receive_attempt = 0; receive_attempt < 4U;
              ++receive_attempt) {
-            (void)receive_mdns_packet(socket_fd);
+            (void)receive_mdns_packet(
+                socket_fd, &destination, receiver_announcement,
+                receiver_announcement_bytes);
         }
-        if (stats.mdns_complete_services != 0U &&
-            stats.airdrop_tcp_attempts == 0U) {
-            probe_airdrop_tcp(interface_index);
-        }
+#if !CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+        probe_airdrop_tcp(interface_index);
+#endif
     }
     /* Keep the joined socket alive beyond the bounded transmit window. Apple
      * peers periodically emit their service cache even without a fresh query. */
-    for (unsigned receive_attempt = 0; receive_attempt < 240U;
-         ++receive_attempt) {
-        (void)receive_mdns_packet(socket_fd);
-        if (stats.mdns_complete_services != 0U &&
-            stats.airdrop_tcp_attempts == 0U) {
-            probe_airdrop_tcp(interface_index);
-        }
+    for (;;) {
+        (void)receive_mdns_packet(
+            socket_fd, &destination, receiver_announcement,
+            receiver_announcement_bytes);
+#if !CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+        probe_airdrop_tcp(interface_index);
+#endif
     }
     ESP_LOGW(TAG,
              "AWDL-MDNS-SUMMARY queries=%lu packets=%lu responses=%lu "
@@ -775,11 +1094,20 @@ esp_err_t espdrop_awdl_netif_init(const uint8_t self_mac[6])
         return ESP_ERR_INVALID_ARG;
     }
     memcpy(station_mac, self_mac, sizeof(station_mac));
-    rx_queue = xQueueCreate(AWDL_NETIF_QUEUE_DEPTH,
+    rx_queue = xQueueCreate(AWDL_NETIF_RX_QUEUE_DEPTH,
                             sizeof(awdl_ethernet_frame_t));
 #if CONFIG_ESPDROP_AWDL_TX_LAB
-    tx_queue = xQueueCreate(AWDL_NETIF_QUEUE_DEPTH,
-                            sizeof(awdl_ethernet_frame_t));
+    /* Sustained TLS output can enqueue an entire advertised TCP window before
+     * the next common AWDL channel. Keep those frames in PSRAM; the radio
+     * path copies one frame into internal memory immediately before TX. */
+    tx_queue_storage = heap_caps_malloc(
+        AWDL_NETIF_TX_QUEUE_DEPTH * sizeof(awdl_ethernet_frame_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (tx_queue_storage != NULL) {
+        tx_queue = xQueueCreateStatic(
+            AWDL_NETIF_TX_QUEUE_DEPTH, sizeof(awdl_ethernet_frame_t),
+            tx_queue_storage, &tx_queue_control);
+    }
     if (rx_queue == NULL || tx_queue == NULL) {
 #else
     if (rx_queue == NULL) {
@@ -820,9 +1148,20 @@ esp_err_t espdrop_awdl_netif_init(const uint8_t self_mac[6])
         return ESP_FAIL;
     }
     lwip_netif->mtu = AWDL_NETIF_MTU;
+#if LWIP_IPV6 && LWIP_ND6_ALLOW_RA_UPDATES
+    /* lwIP keeps a distinct IPv6 MTU when RA updates are enabled. The
+     * Ethernet attach path seeds it to 1500, so changing only `mtu` leaves
+     * TCP with a 1440-byte MSS and produces 1540-byte raw AWDL frames that
+     * esp_wifi_80211_tx cannot accept. */
+    lwip_netif->mtu6 = AWDL_NETIF_MTU;
+#endif
     ESP_RETURN_ON_ERROR(esp_netif_create_ip6_linklocal(awdl_netif), TAG,
                         "create AWDL link-local address");
-    if (xTaskCreate(rx_task, "awdl_netif_rx", 4096, NULL, 5, NULL) != pdPASS) {
+    /* Drain capture ownership before lower-priority logging and TLS work.
+     * tcpip remains responsible for protocol processing after this short
+     * handoff. */
+    if (xTaskCreate(rx_task, "awdl_netif_rx", 4096, NULL, 19, NULL) !=
+        pdPASS) {
         return ESP_ERR_NO_MEM;
     }
 #if CONFIG_ESPDROP_AWDL_MDNS_LAB
@@ -886,14 +1225,35 @@ bool espdrop_awdl_netif_receive(const espdrop_awdl_data_t *data)
     if (!initialized || data == NULL || rx_queue == NULL) {
         return false;
     }
+    const bool directed_to_self =
+        memcmp(data->destination, station_mac, sizeof(station_mac)) == 0;
+    const bool multicast = (data->destination[0] & 0x01U) != 0U;
+    if (!directed_to_self && !multicast) {
+        /* Promiscuous mode sees the entire AWDL cluster. Feeding unrelated
+         * unicast traffic into the bounded RX queue can evict the selected
+         * receiver's TCP ACK and freeze a sustained upload. */
+        ++stats.rx_filtered;
+        return false;
+    }
     espdrop_awdl_tcp_t tcp;
     if (espdrop_awdl_decode_tcp(data, &tcp)) {
         ++stats.tcp_rx_segments;
+        stats.tcp_rx_payload_bytes += tcp.payload_length;
+        stats.tcp_rx_last_sequence = tcp.sequence;
+        stats.tcp_rx_last_acknowledgment = tcp.acknowledgment;
+        stats.tcp_rx_last_window = tcp.window;
+        stats.tcp_rx_last_payload_length = tcp.payload_length;
         if ((tcp.flags & 0x12U) == 0x12U) {
             ++stats.tcp_rx_syn_ack;
         }
         if ((tcp.flags & 0x04U) != 0U) {
             ++stats.tcp_rx_rst;
+        }
+        if ((tcp.flags & 0x01U) != 0U) {
+            ++stats.tcp_rx_fin;
+        }
+        if ((tcp.flags & 0x10U) != 0U && tcp.window == 0U) {
+            ++stats.tcp_rx_zero_window;
         }
     }
     size_t length = 0U;
@@ -936,45 +1296,61 @@ size_t espdrop_awdl_netif_flush(size_t maximum_frames)
         espdrop_awdl_tcp_t tcp = {0};
         const bool is_ipv6 = espdrop_awdl_decode_ipv6(&ethernet_data, &ipv6);
         const bool is_tcp = espdrop_awdl_decode_tcp(&ethernet_data, &tcp);
-        size_t raw_length = 0U;
-        const uint16_t marked_sequence =
-            (uint16_t)(ESPDROP_AWDL_NETIF_SEQUENCE_MARKER |
-                       (awdl_sequence++ & 0x7fffU));
-        if (!espdrop_awdl_build_ethernet_frame(
-                radio_raw_scratch, sizeof(radio_raw_scratch), &raw_length,
-                radio_tx_scratch.bytes, radio_tx_scratch.length,
-                station_mac, ieee80211_sequence++,
-                marked_sequence)) {
-            ++stats.tx_errors;
-            continue;
-        }
-        ++stats.tx_submitted;
         if (is_tcp) {
             ++stats.tcp_tx_segments;
+            stats.tcp_tx_payload_bytes += tcp.payload_length;
+            stats.tcp_tx_last_sequence = tcp.sequence;
+            stats.tcp_tx_last_acknowledgment = tcp.acknowledgment;
+            stats.tcp_tx_last_window = tcp.window;
+            stats.tcp_tx_last_payload_length = tcp.payload_length;
             if ((tcp.flags & 0x02U) != 0U &&
                 (tcp.flags & 0x10U) == 0U) {
                 ++stats.tcp_tx_syn;
             }
         }
-        const esp_err_t result =
-            esp_wifi_80211_tx(WIFI_IF_STA, radio_raw_scratch,
-                              (int)raw_length, false);
-        if (result == ESP_OK) {
-            ++stats.tx_accepted;
-        } else {
-            ++stats.tx_errors;
+        const unsigned copies = is_tcp && tcp.payload_length != 0U
+                                    ? AWDL_NETIF_TCP_PAYLOAD_COPIES
+                                    : 1U;
+        unsigned accepted_copies = 0U;
+        esp_err_t last_result = ESP_FAIL;
+        size_t raw_length = 0U;
+        for (unsigned copy = 0U; copy < copies; ++copy) {
+            const uint16_t marked_sequence =
+                (uint16_t)(ESPDROP_AWDL_NETIF_SEQUENCE_MARKER |
+                           (awdl_sequence++ & 0x7fffU));
+            if (!espdrop_awdl_build_ethernet_frame(
+                    radio_raw_scratch, sizeof(radio_raw_scratch), &raw_length,
+                    radio_tx_scratch.bytes, radio_tx_scratch.length,
+                    station_mac, ieee80211_sequence++, marked_sequence)) {
+                ++stats.tx_errors;
+                last_result = ESP_ERR_INVALID_SIZE;
+                continue;
+            }
+            ++stats.tx_submitted;
+            if (copy != 0U) {
+                ++stats.tx_redundant_submitted;
+            }
+            last_result = esp_wifi_80211_tx(
+                WIFI_IF_STA, radio_raw_scratch, (int)raw_length, false);
+            if (last_result == ESP_OK) {
+                ++stats.tx_accepted;
+                ++accepted_copies;
+            } else {
+                ++stats.tx_errors;
+            }
         }
         ++flushed;
         ESP_LOGI(TAG,
                  "AWDL-NETIF-TX bytes=%u ethertype=0x%02x%02x next=%u "
                  "tcp_src=%u tcp_dst=%u tcp_flags=0x%02x tcp_seq=%lu "
-                 "tcp_checksum=%u driver=%s count=%lu",
+                 "tcp_checksum=%u copies=%u accepted=%u driver=%s count=%lu",
                  (unsigned)raw_length, radio_tx_scratch.bytes[12],
                  radio_tx_scratch.bytes[13], is_ipv6 ? ipv6.next_header : 0U,
                  tcp.source_port, tcp.destination_port, tcp.flags,
                  (unsigned long)tcp.sequence,
                  is_tcp && tcp.checksum_valid ? 1U : 0U,
-                 esp_err_to_name(result), (unsigned long)stats.tx_submitted);
+                 copies, accepted_copies, esp_err_to_name(last_result),
+                 (unsigned long)stats.tx_submitted);
     }
     return flushed;
 #else

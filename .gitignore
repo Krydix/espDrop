@@ -6,3 +6,4 @@ sdkconfig.old
 .DS_Store
 __pycache__/
 *.py[cod]
+host/espdrop-cli/target/

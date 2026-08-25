@@ -110,6 +110,32 @@ bool espdrop_airdrop_tls_ask_probe(
     espdrop_airdrop_tls_result_t *tls_result,
     espdrop_airdrop_ask_result_t *ask_result);
 
+/* Relay form of the attended /Ask probe. Uses the supplied file metadata but
+ * never uploads file data on this connection. */
+bool espdrop_airdrop_tls_ask_stream_probe(
+    int socket_fd,
+    const char *server_name,
+    uint16_t server_port,
+    uint32_t handshake_timeout_ms,
+    uint32_t ask_timeout_ms,
+    const espdrop_airdrop_outgoing_file_t *file,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_ask_result_t *ask_result);
+
+/* Directional research helper. Establish TLS on a fresh, already-connected
+ * socket and upload only after a prior /Ask returned HTTP 200. A clean
+ * iPhone-to-Mac Everyone capture used this topology; the reverse Mac-to-iPhone
+ * sender flow instead reused the Ask's underlying TCP/TLS connection. */
+bool espdrop_airdrop_tls_upload_stream_probe(
+    int socket_fd,
+    const char *server_name,
+    uint32_t handshake_timeout_ms,
+    uint32_t upload_timeout_ms,
+    const espdrop_airdrop_ask_result_t *accepted_ask,
+    const espdrop_airdrop_outgoing_file_t *file,
+    espdrop_airdrop_tls_result_t *tls_result,
+    espdrop_airdrop_upload_result_t *upload_result);
+
 /* Attended lab only: issue one /Ask and, only after HTTP 200 consent, send one
  * bounded hello.jpg /Upload on the same TLS connection with the exact accepted
  * TransferID. No retry or second transfer is attempted. */
@@ -124,10 +150,11 @@ bool espdrop_airdrop_tls_ask_upload_probe(
     espdrop_airdrop_ask_result_t *ask_result,
     espdrop_airdrop_upload_result_t *upload_result);
 
-/* Relay form of the attended probe. A source with rewind uses a constant-
- * memory zlib sizing pass followed by the upload pass; a non-seekable source
- * uses stored dvzip. The complete file is never retained. The call is
- * synchronous and never retries. */
+/* Native-Mac-shaped relay probe. A source with rewind uses a constant-memory
+ * zlib sizing pass: a beneficial result fitting one 128 KiB dvzip block is
+ * compressed, otherwise bounded stored blocks are used. A non-seekable source
+ * also uses stored dvzip. /Ask and /Upload are sequential HTTP/1 requests on
+ * one TLS connection, matching the observed anonymous Mac-to-iPhone flow. */
 bool espdrop_airdrop_tls_ask_upload_stream_probe(
     int socket_fd,
     const char *server_name,

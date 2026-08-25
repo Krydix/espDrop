@@ -135,6 +135,36 @@ int main(void)
     espdrop_airdrop_mdns_merge(&split_cache, &address_packet);
     assert(espdrop_airdrop_service_complete(&split_cache.services[0]));
 
+    const uint8_t receiver_ipv6[16] = {
+        0xfe, 0x80, 0, 0, 0, 0, 0, 0,
+        0x1e, 0xdb, 0xd4, 0xff, 0xfe, 0x42, 0x3f, 0xa0,
+    };
+    uint8_t announcement[512];
+    size_t announcement_bytes = 0U;
+    assert(espdrop_airdrop_mdns_build_announcement(
+        announcement, sizeof(announcement), &announcement_bytes,
+        "1cdbd4423fa0", "espdrop", 8771U,
+        ESPDROP_AIRDROP_RECEIVER_FLAGS_ANONYMOUS, receiver_ipv6));
+    espdrop_airdrop_mdns_result_t announced;
+    assert(espdrop_airdrop_mdns_parse(
+        announcement, announcement_bytes, &announced));
+    assert(announced.response);
+    assert(announced.answers == 1U);
+    assert(announced.additional == 3U);
+    assert(announced.service_count == 1U);
+    assert(strcmp(announced.services[0].instance,
+                  "1cdbd4423fa0._airdrop._tcp.local") == 0);
+    assert(strcmp(announced.services[0].target, "espdrop.local") == 0);
+    assert(strcmp(announced.services[0].txt, "flags=136") == 0);
+    assert(announced.services[0].port == 8771U);
+    assert(memcmp(announced.services[0].ipv6, receiver_ipv6,
+                  sizeof(receiver_ipv6)) == 0);
+    assert(espdrop_airdrop_service_complete(&announced.services[0]));
+    assert(!espdrop_airdrop_mdns_build_announcement(
+        announcement, sizeof(announcement), &announcement_bytes,
+        "contains.dot", "espdrop", 8771U,
+        ESPDROP_AIRDROP_RECEIVER_FLAGS_ANONYMOUS, receiver_ipv6));
+
     assert(!espdrop_airdrop_mdns_parse(packet, length - 1U, &result));
     packet[12] = 0xc0U;
     packet[13] = 0x0cU;
@@ -145,6 +175,9 @@ int main(void)
     assert(espdrop_mdns_build_query(
         query, sizeof(query), &query_length,
         "abc._airdrop._tcp.local", ESPDROP_MDNS_TYPE_SRV, true));
+    assert(espdrop_airdrop_mdns_query_requests_service(query, query_length));
+    assert(espdrop_airdrop_mdns_query_response(query, query_length) ==
+           ESPDROP_MDNS_QUERY_RESPONSE_UNICAST);
     assert(query[4] == 0U && query[5] == 1U);
     assert(query[query_length - 4U] == 0U);
     assert(query[query_length - 3U] == ESPDROP_MDNS_TYPE_SRV);
@@ -161,8 +194,26 @@ int main(void)
     assert(espdrop_mdns_build_query(
         query, sizeof(query), &query_length,
         "abc._airdrop._tcp.local", ESPDROP_MDNS_TYPE_TXT, false));
+    assert(espdrop_airdrop_mdns_query_requests_service(query, query_length));
+    assert(espdrop_airdrop_mdns_query_response(query, query_length) ==
+           ESPDROP_MDNS_QUERY_RESPONSE_MULTICAST);
     assert(query[query_length - 2U] == 0x00U);
     assert(query[query_length - 1U] == 0x01U);
+    assert(espdrop_mdns_build_query(
+        query, sizeof(query), &query_length,
+        "_airdrop._tcp.local", ESPDROP_MDNS_TYPE_PTR, false));
+    assert(espdrop_airdrop_mdns_query_requests_service(query, query_length));
+    assert(espdrop_airdrop_mdns_query_response(query, query_length) ==
+           ESPDROP_MDNS_QUERY_RESPONSE_MULTICAST);
+    assert(espdrop_mdns_build_query(
+        query, sizeof(query), &query_length,
+        "_asquic._udp.local", ESPDROP_MDNS_TYPE_PTR, false));
+    assert(!espdrop_airdrop_mdns_query_requests_service(query, query_length));
+    assert(!espdrop_airdrop_mdns_query_requests_service(
+        announcement, announcement_bytes));
+    assert(espdrop_airdrop_mdns_query_response(
+               announcement, announcement_bytes) ==
+           ESPDROP_MDNS_QUERY_RESPONSE_NONE);
 
     puts("AirDrop mDNS tests passed");
     return 0;

@@ -103,7 +103,7 @@ int main(void)
     assert(data.qos && !data.amsdu);
     assert(data.sequence == 0x4567U);
 
-    uint8_t amsdu_frame[160] = {0};
+    uint8_t amsdu_frame[320] = {0};
     memcpy(amsdu_frame, frame, 24U);
     amsdu_frame[0] = 0x88U;
     amsdu_frame[24] = 0x80U;
@@ -119,6 +119,35 @@ int main(void)
     assert(memcmp(data.destination, target, 6U) == 0);
     assert(memcmp(data.source, self, 6U) == 0);
     assert(data.sequence == 0x4567U);
+
+    const size_t first_subframe_bytes = 14U + msdu_length;
+    const size_t first_padding = (4U - (first_subframe_bytes % 4U)) % 4U;
+    const size_t second_header = 26U + first_subframe_bytes + first_padding;
+    memcpy(amsdu_frame + second_header, self, 6U);
+    memcpy(amsdu_frame + second_header + 6U, target, 6U);
+    amsdu_frame[second_header + 12U] = (uint8_t)(msdu_length >> 8U);
+    amsdu_frame[second_header + 13U] = (uint8_t)msdu_length;
+    memcpy(amsdu_frame + second_header + 14U, frame + 24U, msdu_length);
+    amsdu_frame[second_header + 14U + 10U] = 0x68U;
+    amsdu_frame[second_header + 14U + 11U] = 0x45U;
+    const size_t two_amsdu_length = second_header + 14U + msdu_length;
+    espdrop_awdl_data_t subframes[ESPDROP_AWDL_DATA_SUBFRAMES_MAX];
+    espdrop_awdl_data_decode_result_t batch_result;
+    assert(espdrop_awdl_decode_data_frames(
+               amsdu_frame, two_amsdu_length, subframes,
+               ESPDROP_AWDL_DATA_SUBFRAMES_MAX, &batch_result) == 2U);
+    assert(batch_result == ESPDROP_AWDL_DATA_DECODE_OK);
+    assert(subframes[0].qos && subframes[0].amsdu);
+    assert(subframes[0].sequence == 0x4567U);
+    assert(memcmp(subframes[0].destination, target, 6U) == 0);
+    assert(memcmp(subframes[1].destination, self, 6U) == 0);
+    assert(memcmp(subframes[1].source, target, 6U) == 0);
+    assert(subframes[1].sequence == 0x4568U);
+    assert(espdrop_awdl_decode_data_frames(
+               amsdu_frame, two_amsdu_length, subframes, 1U,
+               &batch_result) == 0U);
+    assert(batch_result == ESPDROP_AWDL_DATA_DECODE_AMSDU_CAPACITY);
+
     amsdu_frame[38] = 0xffU;
     amsdu_frame[39] = 0xffU;
     assert(espdrop_awdl_decode_data_ex(

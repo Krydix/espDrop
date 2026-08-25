@@ -24,6 +24,9 @@
 #define AWDL_HT_VALUE_BYTES 9U
 #define AWDL_DATA_PATH_VALUE_BYTES 15U
 #define AWDL_VERSION_VALUE_BYTES 2U
+#define AWDL_AIRDROP_SERVICE_ID_BYTES 12U
+#define AWDL_AIRDROP_PTR_VALUE_BYTES 24U
+#define AWDL_AIRDROP_TXT_VALUE_BYTES 23U
 #define AWDL_TU_US 1024ULL
 
 static const uint8_t broadcast[6] = {
@@ -92,6 +95,79 @@ static uint8_t *append_tlv(uint8_t *output, uint8_t type, uint16_t length)
     put_le16(output + 1, length);
     memset(output + 3, 0, length);
     return output + 3;
+}
+
+static uint8_t hex_digit(uint8_t value)
+{
+    return value < 10U ? (uint8_t)('0' + value)
+                       : (uint8_t)('a' + value - 10U);
+}
+
+static void write_service_id(uint8_t output[AWDL_AIRDROP_SERVICE_ID_BYTES],
+                             const uint8_t mac[6])
+{
+    for (size_t index = 0U; index < 6U; ++index) {
+        output[index * 2U] = hex_digit((uint8_t)(mac[index] >> 4U));
+        output[index * 2U + 1U] = hex_digit((uint8_t)(mac[index] & 0x0fU));
+    }
+}
+
+static uint8_t *append_airdrop_service_response(
+    uint8_t *cursor,
+    const uint8_t *owner,
+    size_t owner_length,
+    uint8_t record_type,
+    const uint8_t *data,
+    size_t data_length)
+{
+    const uint16_t value_length = (uint16_t)(
+        2U + owner_length + 1U + 2U + 2U + data_length);
+    uint8_t *value = append_tlv(cursor, 2U, value_length);
+    put_le16(value, (uint16_t)(owner_length + 1U));
+    memcpy(value + 2U, owner, owner_length);
+    value[2U + owner_length] = record_type;
+    put_le16(value + 3U + owner_length, (uint16_t)data_length);
+    put_le16(value + 5U + owner_length, 0U);
+    memcpy(value + 7U + owner_length, data, data_length);
+    return cursor + 3U + value_length;
+}
+
+static uint8_t *append_airdrop_service_responses(
+    uint8_t *cursor,
+    const espdrop_awdl_tx_state_t *state,
+    size_t host_name_length)
+{
+    uint8_t service_id[AWDL_AIRDROP_SERVICE_ID_BYTES];
+    write_service_id(service_id, state->self);
+    static const uint8_t airdrop_owner[] = {0xc0U, 0x07U};
+    uint8_t instance[1U + AWDL_AIRDROP_SERVICE_ID_BYTES + 2U];
+    instance[0] = AWDL_AIRDROP_SERVICE_ID_BYTES;
+    memcpy(instance + 1U, service_id, sizeof(service_id));
+    instance[sizeof(instance) - 2U] = 0xc0U;
+    instance[sizeof(instance) - 1U] = 0x07U;
+
+    uint8_t ptr_data[1U + AWDL_AIRDROP_SERVICE_ID_BYTES + 2U];
+    memcpy(ptr_data, instance, sizeof(ptr_data));
+    ptr_data[sizeof(ptr_data) - 1U] = 0x00U;
+    cursor = append_airdrop_service_response(
+        cursor, airdrop_owner, sizeof(airdrop_owner), 12U,
+        ptr_data, sizeof(ptr_data));
+
+    uint8_t srv_data[6U + 1U + ESPDROP_AWDL_TX_NAME_BYTES + 2U] = {0};
+    srv_data[4] = (uint8_t)(state->airdrop_port >> 8U);
+    srv_data[5] = (uint8_t)state->airdrop_port;
+    srv_data[6] = (uint8_t)host_name_length;
+    memcpy(srv_data + 7U, state->name, host_name_length);
+    srv_data[7U + host_name_length] = 0xc0U;
+    srv_data[8U + host_name_length] = 0x0cU;
+    cursor = append_airdrop_service_response(
+        cursor, instance, sizeof(instance), 33U,
+        srv_data, 9U + host_name_length);
+
+    static const uint8_t empty_txt[] = {0U};
+    return append_airdrop_service_response(
+        cursor, instance, sizeof(instance), 16U,
+        empty_txt, sizeof(empty_txt));
 }
 
 bool espdrop_awdl_tx_state_from_mif(
@@ -371,10 +447,16 @@ espdrop_awdl_build_result_t espdrop_awdl_build_action(
     if (!state_is_valid(state) || now_us < state->sync_reference_us) {
         return ESPDROP_AWDL_BUILD_INVALID_STATE;
     }
+    if (state->advertise_airdrop_tcp && state->airdrop_port == 0U) {
+        return ESPDROP_AWDL_BUILD_INVALID_STATE;
+    }
 
     const size_t name_length =
         bounded_string_length(state->name, sizeof(state->name));
     const size_t arpa_value_length = 4U + name_length;
+    const size_t airdrop_service_bytes =
+        subtype == ESPDROP_AWDL_ACTION_MIF && state->advertise_airdrop_tcp
+            ? 87U + name_length : 0U;
     const size_t required = IEEE80211_HEADER_BYTES + AWDL_ACTION_HEADER_BYTES +
         (3U + AWDL_SYNC_VALUE_BYTES) +
         (3U + AWDL_ELECTION_V1_VALUE_BYTES) +
@@ -384,7 +466,7 @@ espdrop_awdl_build_result_t espdrop_awdl_build_action(
         (subtype == ESPDROP_AWDL_ACTION_MIF
              ? (3U + AWDL_HT_VALUE_BYTES) + (3U + arpa_value_length) : 0U) +
         (3U + AWDL_DATA_PATH_VALUE_BYTES) +
-        (3U + AWDL_VERSION_VALUE_BYTES);
+        (3U + AWDL_VERSION_VALUE_BYTES) + airdrop_service_bytes;
     if (capacity < required || required > ESPDROP_AWDL_TX_FRAME_CAPACITY) {
         return ESPDROP_AWDL_BUILD_NO_SPACE;
     }
@@ -481,6 +563,9 @@ espdrop_awdl_build_result_t espdrop_awdl_build_action(
         value[2] = 0x6fU;
         value[4] = 0x1fU;
         value[5] = 0xffU;
+        /* Preserve the profile that completed the stock-iPhone sender run.
+         * OWL models value[5] as the one-byte RX-MCS bitmap; value[6] is
+         * trailing opaque capability state, not a second spatial stream. */
         value[6] = 0xffU;
         cursor += 3U + AWDL_HT_VALUE_BYTES;
 
@@ -507,6 +592,11 @@ espdrop_awdl_build_result_t espdrop_awdl_build_action(
     value[0] = 0xa0U;
     value[1] = 1U;
     cursor += 3U + AWDL_VERSION_VALUE_BYTES;
+
+    if (subtype == ESPDROP_AWDL_ACTION_MIF &&
+        state->advertise_airdrop_tcp) {
+        cursor = append_airdrop_service_responses(cursor, state, name_length);
+    }
 
     *length = (size_t)(cursor - frame);
     return *length == required ? ESPDROP_AWDL_BUILD_OK

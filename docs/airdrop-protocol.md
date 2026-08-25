@@ -80,6 +80,23 @@ stock iPhone. Exactly one upload was attempted and no retry was enabled.
 Compact evidence is in
 [`lab/2026-08-24-airdrop-upload.json`](lab/2026-08-24-airdrop-upload.json).
 
+**CONFIRMED by an anonymous native Mac-to-iPhone control:** the sender skipped
+`/Hello`, included preview data in `/Ask`, waited for explicit acceptance, and
+then issued `/Upload` as HTTP/1 stream 2 on the Ask connection's existing
+TCP/TLS flow. Network.framework exposed separate request objects, but they had
+the same flow UUID and local port and shared one HTTP connection and BoringSSL
+session. The text-only anonymous consent prompt did not render the supplied
+preview, so UI preview absence does not prove metadata absence. The native
+sender chose CPIO with adaptive compression and disabled compression for the
+photo data. Compact evidence is in
+[`lab/2026-08-24-macos-iphone-anonymous-send.json`](lab/2026-08-24-macos-iphone-anonymous-send.json).
+
+**CONFIRMED by the reverse anonymous iPhone-to-Mac control:** that sender
+opened a distinct post-accept TCP/TLS flow for `/Upload`. Connection topology
+is therefore direction/profile dependent; espDrop mirrors Mac-to-iPhone
+same-socket reuse for its primary sender path and retains fresh Upload only as
+a research profile.
+
 ## Identity and discoverability
 
 **CONFIRMED:** Contacts Only uses iCloud-derived identities, short hashes in

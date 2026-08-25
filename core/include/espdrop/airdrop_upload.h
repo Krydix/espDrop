@@ -37,13 +37,27 @@ typedef bool (*espdrop_airdrop_stream_write_t)(
 /* size_bytes is authoritative and must remain stable for the synchronous
  * send. read may return short chunks, but zero bytes before size_bytes is a
  * truncation. A seekable/spooled source supplies rewind so the sender can do
- * a constant-memory compression sizing pass followed by the upload pass. */
+ * a constant-memory compression sizing/adaptive-selection pass followed by
+ * the upload pass. */
 typedef struct {
     void *context;
     size_t size_bytes;
     espdrop_airdrop_source_read_t read;
     espdrop_airdrop_source_rewind_t rewind;
 } espdrop_airdrop_source_t;
+
+/* Optional host-prepared application/x-dvzip body. When source.read is set,
+ * the sender publishes file_size_bytes in /Ask but copies exactly
+ * source.size_bytes bytes directly into /Upload. This is the USB relay
+ * boundary: the host can seek/package a large file while the embedded target
+ * only applies bounded backpressure. */
+typedef struct {
+    espdrop_airdrop_source_t source;
+    size_t archive_bytes;
+    size_t dvzip_blocks;
+    uint32_t file_crc32;
+    bool stored_blocks;
+} espdrop_airdrop_prepared_payload_t;
 
 /* Synchronous one-file relay descriptor. file_name is a leaf name presented
  * to the receiver, file_type is an Apple UTI such as public.jpeg, and source
@@ -53,6 +67,7 @@ typedef struct {
     const char *file_type;
     uint32_t mtime;
     espdrop_airdrop_source_t source;
+    espdrop_airdrop_prepared_payload_t prepared_payload;
 } espdrop_airdrop_outgoing_file_t;
 
 typedef struct {
@@ -116,6 +131,13 @@ bool espdrop_airdrop_plan_stored_dvzip(
     espdrop_airdrop_stream_plan_t *plan,
     const char *archive_path,
     size_t file_bytes);
+
+/* Select the bounded single-zlib-block profile only when it both saves bytes
+ * and fits dvzip's 128 KiB block ceiling. Larger/incompressible archives use
+ * stored blocks until independent compressed-block streaming is available. */
+bool espdrop_airdrop_should_use_single_zlib_block(
+    size_t archive_bytes,
+    size_t compressed_bytes);
 
 /* Stream one padded ODC cpio archive. workspace is the only source-data
  * buffer; no complete file or archive is retained. */

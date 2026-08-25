@@ -250,6 +250,15 @@ bool espdrop_airdrop_plan_stored_dvzip(
     return true;
 }
 
+bool espdrop_airdrop_should_use_single_zlib_block(
+    size_t archive_bytes,
+    size_t compressed_bytes)
+{
+    return archive_bytes > 0U && compressed_bytes > 0U &&
+           compressed_bytes < archive_bytes &&
+           compressed_bytes <= ESPDROP_AIRDROP_DVZIP_STREAM_BLOCK_BYTES;
+}
+
 typedef struct {
     espdrop_airdrop_stream_write_t write;
     void *context;

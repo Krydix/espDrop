@@ -17,6 +17,32 @@ session.
 | COMPLETE | HTTP success and exact sent byte count recorded |
 | FAILED | sockets closed, session secrets cleared, bounded diagnostic retained |
 
+## USB target control
+
+The relay profile exposes a line-oriented serial control plane so the host
+application—not an embedded proximity heuristic—owns receiver selection:
+
+```text
+ESPDROP PING
+ESPDROP PEERS
+ESPDROP TARGET 52:f4:36:b8:fd:f5
+ESPDROP TARGET AUTO
+ESPDROP TARGET NONE
+ESPDROP TARGET STATUS
+ESPDROP RESTART
+```
+
+Peer enumeration is framed by `ESPDROP-PEERS-BEGIN` and
+`ESPDROP-PEERS-END`. Each `ESPDROP-PEER` record contains the temporary AWDL
+MAC, RSSI, signal mask, endpoint completeness, port, observation age, and
+AirDrop service instance. These are session identifiers, not persistent user
+identifiers.
+
+The ESP will not open an outgoing AirDrop TCP connection until both a target
+and a real outgoing file are registered. The Rust CLI mirrors the control
+plane with `peers`, `target`, `restart`, and `send --target ... --restart`, so
+the same API can back a later Windows/macOS/Linux receiver picker.
+
 ## Baseline request flow
 
 1. Advertise/scan over BLE to wake receivers.
@@ -70,13 +96,25 @@ between `/Ask` and `/Upload`, used chunked dvzip, and reused the accepted TLS
 connection. This reproduces the iOS 26 reference profile; it does not yet prove
 which of those properties other receiver versions require.
 
+**CONFIRMED BY AN ANONYMOUS NATIVE SENDER CONTROL:** a MacBook Air and newly
+configured iPhone signed into different Apple accounts completed a Finder photo
+transfer through Everyone mode. The native sender skipped `/Hello`, included
+preview data in `/Ask`, waited for the accepted Ask response, and then started
+`/Upload`. Although Network.framework named the request objects `C81` and
+`C82`, both used the same flow UUID, source port, HTTP connection, and TLS
+session; Upload joined that connection as HTTP/1 stream 2. The anonymous iPhone
+prompt did not render the included preview, so visible preview UI is not a
+protocol-validity test. The sender selected CPIO with adaptive compression and
+disabled compression for the already-compressed photo. Evidence is in
+[`lab/2026-08-24-macos-iphone-anonymous-send.json`](lab/2026-08-24-macos-iphone-anonymous-send.json).
+
 **HARDWARE-PROVEN BEHIND AN ATTENDED LAB FLAG:** the core validates the observed
 upper-case UUID, URL-safe pseudonym, and upper-case push-token shapes; builds
 the exact minimal `/Upload` header order without `Host` or `Accept-Encoding`;
 and uploads only after `/Ask` returns 200. The first successful live run used
 one contiguous 10 KiB ODC archive and one zlib-compressed dvzip block.
 
-**IMPLEMENTED AND HARDWARE-PROVEN:** the sender accepts a declared-size source
+**IMPLEMENTED AND HARDWARE-PROVEN FOR THE SMALL COMPRESSED PROFILE:** the sender accepts a declared-size source
 with short-read and optional rewind callbacks. For a seekable/spooled source,
 it streams ODC through zlib once to count the exact payload, rewinds, and then
 streams the same source into `/Upload`. The successful hardware run used a
@@ -87,20 +125,45 @@ staging buffer coalesces producer writes, while mbedTLS submissions stay below
 the lwIP send window. Evidence is in
 [`lab/2026-08-24-airdrop-streaming-upload.json`](lab/2026-08-24-airdrop-streaming-upload.json).
 
+The relay now enforces dvzip's 128 KiB block ceiling. A compressed archive is
+used only when it fits one block and saves bytes; larger or incompressible
+payloads use bounded stored blocks after the sizing pass. This prevents the old
+large-JPEG path from putting an approximately 2 MB zlib stream into one dvzip
+block and follows the native sender's observed decision to disable compression
+for JPEG data. This adaptive selection is now hardware-proven with a
+53,359-byte JPEG sent as a 61,440-byte ODC archive in one stored dvzip block.
+
 The stored-dvzip fallback remains host-tested for truly non-seekable sources,
 including short reads, a 180,000-byte two-block transfer, truncation, source
 failure, sink failure, CRC accounting, and independent Python archive
-reconstruction. Three live stored controls stalled without an HTTP response
-after 3,024, 5,109, and 4,438 request bytes respectively; each hit the sender's
-TLS timeout. Consequently, production relay ingress should spool to SD/flash
-and expose rewind until AWDL/TCP throughput is improved. The sender never
-blindly retries a transfer.
+reconstruction. Three earlier live stored controls stalled without an HTTP
+response after 3,024, 5,109, and 4,438 request bytes respectively; each hit the
+sender's TLS timeout before the native topology correction. The now-confirmed
+same-socket and adaptive stored-block profile needs a new attended control.
+The sender never blindly retries a transfer.
 
-**CONFIRMED:** the target iPhone accepts zlib-compressed dvzip produced by both
-the original contiguous sender and the new two-pass streaming sender. Stored
-dvzip did not complete within the current transport timeout, so receiver
-acceptance is still unproven. Bare cpio, other file types, and other receiver
-versions remain unknown.
+**IMPLEMENTED AND HARDWARE-PROVEN:** the
+portable Rust CLI can now prepare the complete logical ODC cpio/stored-dvzip
+stream without materializing it in memory. Before arming the transfer it
+declares the original file length and CRC, padded archive length, dvzip block
+count, and exact final payload length and CRC. `/Ask` advertises the original
+length. Only after acceptance does `/Upload` request the prepared source, which
+emits `ESPDROP-STREAM-GO`; the CLI then sends CRC-protected 4 KiB frames under
+one-frame acknowledgements into a 16 KiB FreeRTOS stream buffer. This makes the
+host the seekable packaging boundary and the ESP a bounded USB-to-AWDL relay.
+The radio queue is backed by PSRAM, and both lwIP's general MTU and its separate
+IPv6 MTU are set to 1460 so injected raw frames remain within the ESP32-S3
+driver's 1500-byte limit. An attended stock-iPhone run streamed all 61,444
+payload bytes with zero size or queue drops, returned Upload HTTP 200, and
+delivered the real JPEG. The ESP records a terminal TLS/Ask/Upload result; the
+CLI polls that record and exits successfully only after the final Upload
+response. Evidence is in
+[`lab/2026-08-25-airdrop-host-relay.json`](lab/2026-08-25-airdrop-host-relay.json).
+
+**CONFIRMED:** the target iPhone accepts both zlib-compressed and stored dvzip
+containing ODC cpio. The compressed profile is proven by the contiguous and
+two-pass streaming senders; the stored profile is proven by the host relay.
+Bare cpio, other file types, and other receiver versions remain unknown.
 
 **UNKNOWN:** which alternate TLS/certificate profiles current Everyone mode
 accepts, and the Contacts Only identity requirements. One minimum working

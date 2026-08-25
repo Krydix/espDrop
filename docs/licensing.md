@@ -37,6 +37,11 @@ is compatible with espDrop's license. When adapting their code, retain the
 original copyright and license notice, name the upstream project and revision,
 and describe significant changes.
 
+The BLE wake wire profile was cross-checked against `airdrop-mt7921` revision
+`d7c86192e3b79c520fde5965ddc24a1ad8cd1066`. espDrop independently encodes the
+documented manufacturer record through ESP-IDF NimBLE; it does not carry the
+project's BlueZ shell implementation.
+
 esp-owl has mixed per-file notices and no repository-level license at the
 revision currently recorded in the research ledger. Review each candidate
 file independently. Do not copy code whose redistribution terms are absent or

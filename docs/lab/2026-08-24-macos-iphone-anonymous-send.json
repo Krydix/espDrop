@@ -1,0 +1,145 @@
+{
+  "date": "2026-08-24",
+  "scope": "one attended native Finder AirDrop photo from the MacBook Air to a newly configured iPhone through Everyone mode",
+  "classification": "anonymous control: sender and receiver were signed into different Apple accounts",
+  "host": {
+    "product": "macOS",
+    "version": "26.6.2",
+    "build": "25G83",
+    "architecture": "arm64",
+    "application": "com.apple.finder",
+    "awdlInterface": "awdl0",
+    "awdlMac": "ba:f3:e4:24:9f:1a"
+  },
+  "capture": {
+    "startedUtc": "2026-08-24T04:33:49Z",
+    "directory": "build/macos-airdrop-oracle/20260824T043349Z",
+    "sources": [
+      "filtered macOS sharingd and Network.framework unified log",
+      "DNS-SD browse with kDNSServiceFlagsIncludeAWDL",
+      "user confirmation of the anonymous accept UI and completed transfer"
+    ],
+    "packetCapture": false,
+    "packetCaptureReason": "macOS denied access to the BPF device without elevated privileges",
+    "containsEarlierAbortedAttempt": true
+  },
+  "transfer": {
+    "id": "B201B81F-FACB-4C9F-89A0-234886F43675",
+    "fileBytes": 1344332,
+    "receiverCategory": 2,
+    "protocol": 0,
+    "receiverDeviceType": "iPhone",
+    "rssi": -22,
+    "result": 0,
+    "transport": "awdl"
+  },
+  "timeline": [
+    {
+      "time": "2026-08-24T04:34:49.607729Z",
+      "event": "Ask state started"
+    },
+    {
+      "time": "2026-08-24T04:34:49.608768Z",
+      "event": "receiver did not support Hello; sender skipped it"
+    },
+    {
+      "time": "2026-08-24T04:34:49.609315Z",
+      "event": "native sender added preview data to the Ask request"
+    },
+    {
+      "time": "2026-08-24T04:34:49.723315Z",
+      "event": "Ask connection completed TLS"
+    },
+    {
+      "time": "2026-08-24T04:34:52.161706Z",
+      "event": "Ask received HTTP 200 after user acceptance"
+    },
+    {
+      "time": "2026-08-24T04:34:52.169689Z",
+      "event": "sender extracted IDS session ID, pseudonym, and push token from the Ask response"
+    },
+    {
+      "time": "2026-08-24T04:34:52.170178Z",
+      "event": "Upload state started after Ask completed"
+    },
+    {
+      "time": "2026-08-24T04:34:52.175287Z",
+      "event": "sender selected CPIO with adaptive compression"
+    },
+    {
+      "time": "2026-08-24T04:34:52.189303Z",
+      "event": "Upload request object joined the established Ask HTTP messaging protocol"
+    },
+    {
+      "time": "2026-08-24T04:34:52.192400Z",
+      "event": "initial Upload request sent as HTTP/1 stream 2"
+    },
+    {
+      "time": "2026-08-24T04:34:52.198035Z",
+      "event": "adaptive compressor disabled compression for the incompressible photo"
+    },
+    {
+      "time": "2026-08-24T04:34:52.200116Z",
+      "event": "sender finished emitting Upload"
+    },
+    {
+      "time": "2026-08-24T04:34:53.215461Z",
+      "event": "Upload received HTTP 200"
+    }
+  ],
+  "askTls": {
+    "version": "TLS 1.3",
+    "cipher": "TLS_AES_256_GCM_SHA384",
+    "group": "X25519",
+    "signatureAlgorithm": "rsa_pss_rsae_sha256",
+    "alpn": null,
+    "resumed": false,
+    "receiverRequestedClientCertificate": true,
+    "senderCertificateChainLength": 2,
+    "externalReceiverCertificateVerificationSucceeded": true
+  },
+  "connectionTopology": {
+    "askFrameworkObject": "C81",
+    "uploadFrameworkObject": "C82",
+    "flowUuid": "5C4A0754-624C-41EB-BA64-1179E4F162DB",
+    "senderEndpoint": "fe80::b8f3:e4ff:fe24:9f1a%awdl0:49543",
+    "receiverPort": 8770,
+    "httpInstance": 29,
+    "httpConnection": 1,
+    "askHttpStream": 1,
+    "uploadHttpStream": 2,
+    "policy": "sequential Ask and Upload requests reuse one underlying TCP/TLS connection",
+    "evidence": "C82 joined http_messaging and used i29:c1:s2; C81 and C82 report the same flow UUID and local port, and no second TLS handshake was logged"
+  },
+  "ui": {
+    "nativeSenderIncludedPreviewData": true,
+    "anonymousReceiverPromptDisplayedPreview": false,
+    "interpretation": "Preview presence in Ask and preview rendering in the anonymous consent UI are independent; absence of a visible preview is not evidence of malformed file metadata."
+  },
+  "metrics": {
+    "askSentMilliseconds": 116,
+    "askFinishedMilliseconds": 2560,
+    "senderTlsCertificateDigest": "5a324cf11906291f",
+    "receiverTlsCertificateDigest": null,
+    "legacy": false,
+    "discoverabilityLevel": 2,
+    "totalBytesBucket": "5M",
+    "bytesPerSecond": 1298752,
+    "success": true,
+    "fromShareSheet": false
+  },
+  "confirmed": [
+    "A native Mac can send to an unrelated iPhone through the Everyone route without a shared Apple-account identity.",
+    "The legacy protocol-0 receiver omitted Hello and the sender waited for Ask acceptance before starting Upload.",
+    "The native sender included preview data even though the anonymous iPhone accept prompt did not render a preview.",
+    "Ask and Upload were HTTP/1 streams 1 and 2 on one underlying TCP/TLS connection.",
+    "The successful photo used CPIO with adaptive compression, which switched compression off for the photo data."
+  ],
+  "notConfirmed": [
+    "Encrypted request headers, binary plist bytes, and archive bytes were not recovered from the unified log.",
+    "The private IDS values returned by Ask were redacted.",
+    "The exact preview image format and dimensions were redacted.",
+    "This one receiver does not establish a universal topology for every AirDrop protocol version or direction."
+  ],
+  "implementationDecision": "Use sequential Ask and Upload on the accepted TCP/TLS socket for espDrop's ESP-to-iPhone sender path; retain the fresh-Upload helper only as a directional research profile."
+}

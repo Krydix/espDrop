@@ -136,6 +136,38 @@ int main(void)
            ESPDROP_TABLE_AMBIGUOUS);
     assert(selected == NULL);
 
+    /* Runtime target selection accepts a clearly nearer complete peer and
+     * refuses ties or weak/stale candidates. */
+    table.peers[0].awdl.peer_valid = true;
+    table.peers[0].awdl_seen_ms = 1600U;
+    table.peers[0].airdrop_seen_ms = 1600U;
+    table.peers[0].awdl_rssi = -20;
+    assert(table.count == 3U);
+    table.peers[2].awdl.peer_valid = true;
+    table.peers[2].awdl_seen_ms = 1600U;
+    table.peers[2].airdrop_seen_ms = 1600U;
+    table.peers[2].awdl_rssi = -47;
+    assert(espdrop_peer_table_select_airdrop_proximity(
+               &table, 1650U, 500U, -70, 8, true, &selected) ==
+           ESPDROP_TABLE_OK);
+    assert(selected == &table.peers[0]);
+    table.peers[2].awdl_rssi = -25;
+    assert(espdrop_peer_table_select_airdrop_proximity(
+               &table, 1650U, 500U, -70, 8, true, &selected) ==
+           ESPDROP_TABLE_AMBIGUOUS);
+    assert(selected == NULL);
+    table.peers[2].awdl_rssi = -80;
+    table.peers[0].awdl_rssi = -75;
+    assert(espdrop_peer_table_select_airdrop_proximity(
+               &table, 1650U, 500U, -70, 8, true, &selected) ==
+           ESPDROP_TABLE_NOT_FOUND);
+    assert(espdrop_peer_table_select_airdrop_proximity(
+               &table, 2200U, 500U, -80, 8, true, &selected) ==
+           ESPDROP_TABLE_NOT_FOUND);
+    assert(espdrop_peer_table_select_airdrop_proximity(
+               &table, 1650U, 500U, -128, 8, true, &selected) ==
+           ESPDROP_TABLE_INVALID_ARGUMENT);
+
     puts("peer table tests passed");
     return 0;
 }

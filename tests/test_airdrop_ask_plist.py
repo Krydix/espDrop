@@ -18,6 +18,7 @@ def main() -> None:
                 "FileBomPath": "./hello.jpg",
                 "FileIsDirectory": False,
                 "FileName": "hello.jpg",
+                "FileSize": 53359,
                 "FileType": "public.jpeg",
             }
         ],

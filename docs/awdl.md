@@ -1,6 +1,6 @@
 # AWDL on ESP32-S3
 
-Status date: 2026-08-23. See the evidence labels in
+Status date: 2026-08-24. See the evidence labels in
 [airdrop-protocol.md](airdrop-protocol.md).
 
 ## What must exist
@@ -87,6 +87,26 @@ delayed across AWDL availability windows, while the otherwise identical
 12-second probe completed. AirDrop HTTP requests remain separate work. Compact
 evidence is in
 [`lab/2026-08-24-airdrop-tls-connect.json`](lab/2026-08-24-airdrop-tls-connect.json).
+
+## ESP32-S3 active-receive policy experiment
+
+**NEGATIVE RESULT on 2026-08-24:** ESP-IDF 5.4 has no public active-monitor or
+automatic-ACK API. Its ESP32-S3 Wi-Fi blobs do export semantic station BSSID
+and RX-policy wrappers. Local call-graph tracing identified the exact
+pre-authentication and authenticated transitions used by the normal station
+connection state machine, so espDrop tested those transitions behind a
+version-pinned, default-off lab flag without copying blob code or writing raw
+registers.
+
+Both bounded runs remained stable and continued to receive AWDL action and
+multicast IPv6 traffic. The pre-authentication run submitted 22 directed TCP
+SYNs and the authenticated run submitted 42, but both observed zero frames
+addressed to the ESP, zero Neighbor Advertisements, zero Echo Replies, and no
+TCP connection. Therefore these exported policies do not turn promiscuous mode
+into an ACK-capable active-monitor path for the tested Mac peer. This does not
+invalidate the already proven iPhone bidirectional/TCP runs and does not rule
+out unexported firmware mechanisms. Evidence and exact bounds are in
+[`lab/2026-08-24-esp32s3-active-rx-policy.json`](lab/2026-08-24-esp32s3-active-rx-policy.json).
 
 ## Phase 1 gates
 
@@ -339,11 +359,11 @@ the successful direct-peer result is in
 
 AirDrop receiver MAC addresses are ephemeral enough that copying one into a
 lab configuration, rebuilding, and rebooting can lose the intended peer. The
-bounded lab can now remain passive until a live parsed MIF advertises
-`_airdrop._tcp`, bind that peer in RAM for one session, and begin the existing
-15-second experiment without another build. An explicit configured target
-still takes precedence and now waits for its own live MIF instead of starting
-on traffic from an unrelated peer. The capture artifact records the automatic
+bounded lab now observes fresh valid MIFs advertising `_airdrop._tcp` for one
+second, then binds a peer in RAM only if it is at least -70 dBm and exceeds the
+runner-up by 8 dB. Arrival order cannot select the recipient; a weak or crowded
+field remains ambiguous. An explicit configured target still takes precedence
+and waits for its own live MIF. The capture artifact records the automatic
 selection event.
 
 **CONFIRMED IN A BOUNDED HARDWARE RUN on 2026-08-23:** same-boot selection
@@ -360,9 +380,10 @@ task started, and no mDNS query was sent. This is a valid passive safety
 control, not a failed transmission. The complete compact evidence is in
 [`lab/2026-08-23-awdl-auto-target.json`](lab/2026-08-23-awdl-auto-target.json).
 
-Same-boot selection removes the stale-identity race. It does not solve the
-remaining distance-one admission boundary; richer current MIF/admission state
-or the S3's single-band channel limitation remains the next research focus.
+Same-boot selection removes the stale-identity race. The later direct-peer work
+removed the historical admission gate; current selection uses protocol
+validity plus a conservative proximity margin and then proceeds to endpoint
+resolution.
 
 ## Phase-aware target copresence
 

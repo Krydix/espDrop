@@ -50,8 +50,19 @@ cloud service.
 - a hardware-proven constant-memory relay sender: seekable/spooled sources are
   zlib-counted, rewound, then streamed through a fixed 2 KiB source workspace;
   the stock iPhone accepted the result and received the JPEG
+- build- and host-tested adaptive dvzip selection: only beneficial zlib output
+  fitting one 128 KiB block is compressed; real-image-sized payloads fall back
+  to bounded stored blocks, matching the anonymous native sender observation
+- a hardware-proven AirDrop Continuity BLE wake advertisement: with the share
+  sheet closed, the stock iPhone published a complete `_airdrop._tcp` endpoint
+  after the ESP emitted the bounded Everyone-mode wake record
+- a hardware-proven USB relay of a real 53,359-byte JPEG through ESP flash to
+  a Mac mini over native AirDrop
 - verbatim preservation of a peer's modern 16-slot AWDL channel sequence
 - bounded ephemeral BLE/AWDL/AirDrop peer model
+- runtime AirDrop target selection across rotating AWDL identities: observe
+  fresh candidates for one second, require a minimum RSSI and an 8 dB lead,
+  and remain ambiguous instead of selecting by arrival order
 - TapDrop scoring based on timing, appearance, cross-layer observation, and
   RSSI
 - mandatory ambiguity result when two targets are too close to distinguish
@@ -74,6 +85,7 @@ cloud service.
       include/        tap session and correlation API
       src/            GPIO field detection and scoring
     main/             ESP32-S3 research firmware
+    host/             portable Rust USB relay CLI
     docs/             protocol baseline and experiment ledger
     tests/            host-side deterministic tests
     web-installer/    GitHub Pages source
@@ -90,6 +102,74 @@ Install ESP-IDF 5.4, then:
 
 The Makefile follows the same local workflow as ESPresso and defaults
 `IDF_PATH` to `~/esp/esp-idf`.
+
+## USB relay CLI
+
+The host-side relay is a Rust CLI so the same protocol and codebase can run on
+macOS, Windows, and Linux. The primary path packages ODC cpio/stored dvzip on
+the host, declares both original and final payload sizes, waits for AirDrop
+acceptance, and then streams with bounded backpressure while pinning the exact
+Espressif serial/MAC:
+
+    cargo run --manifest-path host/espdrop-cli/Cargo.toml -- ports
+    make relay-peers \
+        PORT=/dev/cu.usbmodemXXXX \
+        ESP_SERIAL=AA:BB:CC:DD:EE:FF
+    make relay-send \
+        PORT=/dev/cu.usbmodemXXXX \
+        ESP_SERIAL=AA:BB:CC:DD:EE:FF \
+        PEER=11:22:33:44:55:66 \
+        FILE=/path/to/photo.jpg
+
+The legacy flash-spool path remains available:
+
+    make relay-upload \
+        PORT=/dev/cu.usbmodemXXXX \
+        ESP_SERIAL=AA:BB:CC:DD:EE:FF \
+        FILE=/path/to/photo.jpg
+
+For an attended live run, one target flashes the relay profile and arms the
+host stream inside the firmware's 15-second post-boot window:
+
+    make lab-airdrop-relay-live \
+        PORT=/dev/cu.usbmodemXXXX \
+        ESP_SERIAL=AA:BB:CC:DD:EE:FF \
+        PEER=11:22:33:44:55:66 \
+        FILE=/path/to/photo.jpg
+
+The relay firmware defaults to no selected receiver. `relay-peers` lists the
+temporary AWDL addresses and signal data for visible AirDrop receivers;
+`relay-target PEER=...` selects one explicitly. `relay-send` applies the
+selected temporary address and arms the file on that same live discovery
+session—there is no firmware flash in that path. Set `RESTART=1` only when a
+fresh firmware session is actually required. `PEER=AUTO` remains available
+as an explicit host decision.
+
+For a headless single-phone setup, `PEER=ONLY` keeps one serial connection
+open, waits for exactly one complete receiver endpoint, and selects its current
+session MAC on the host. It refuses to guess when multiple receivers exist.
+
+`relay-send` calculates the source and final payload CRC-32 values before
+arming the ESP. The ESP does not accept payload bytes until `/Ask` has returned
+HTTP 200, then acknowledges CRC-protected 4 KiB frames into a 16 KiB stream
+buffer while the AirDrop TLS task drains them. It never retains the complete
+file or archive. `relay-upload` instead erases only the dedicated `storage`
+partition, verifies the raw-file CRC, and commits metadata last. Supported
+inferred types currently include JPEG, PNG, HEIC, PDF, TXT, and WAV; other
+Apple UTIs can be supplied with `--type`.
+
+The live host stream follows the stack's configured 64 MiB transfer policy and
+is not constrained by the flash partition. The legacy spool reserves
+10,289,152 bytes (about 9.81 MiB) in the current 16 MiB partition map.
+
+For an explicitly attended sender test, open the iPhone AirDrop receiver UI
+before flashing the bounded lab profile:
+
+    make lab-airdrop-relay-test \
+        PORT=/dev/cu.usbmodemXXXX \
+        DURATION=180
+
+Normal and web-installer firmware remain transmit-suppressed.
 
 If `make ports` reports “application USB device,” hold **BOOT**, tap
 **RESET**, then release **BOOT**. The port should reappear as

@@ -16,6 +16,7 @@ extern "C" {
 #define ESPDROP_MDNS_TYPE_TXT 16U
 #define ESPDROP_MDNS_TYPE_AAAA 28U
 #define ESPDROP_MDNS_TYPE_SRV 33U
+#define ESPDROP_AIRDROP_RECEIVER_FLAGS_ANONYMOUS 136U
 
 typedef struct {
     char name[ESPDROP_MDNS_NAME_BYTES];
@@ -47,6 +48,12 @@ typedef struct {
     bool response;
 } espdrop_airdrop_mdns_result_t;
 
+typedef enum {
+    ESPDROP_MDNS_QUERY_RESPONSE_NONE = 0,
+    ESPDROP_MDNS_QUERY_RESPONSE_MULTICAST,
+    ESPDROP_MDNS_QUERY_RESPONSE_UNICAST,
+} espdrop_mdns_query_response_t;
+
 bool espdrop_mdns_build_query(
     uint8_t *packet,
     size_t capacity,
@@ -54,6 +61,29 @@ bool espdrop_mdns_build_query(
     const char *name,
     uint16_t type,
     bool unicast_response);
+
+/* Build a complete identity-free receiver announcement: one AirDrop PTR
+ * answer plus its SRV, TXT, and IPv6 address records. */
+bool espdrop_airdrop_mdns_build_announcement(
+    uint8_t *packet,
+    size_t capacity,
+    size_t *length,
+    const char *service_id,
+    const char *host_name,
+    uint16_t port,
+    uint32_t flags,
+    const uint8_t ipv6[16]);
+
+bool espdrop_airdrop_mdns_query_requests_service(
+    const uint8_t *packet,
+    size_t length);
+
+/* Return how an AirDrop DNS-SD query asks to be answered. mDNS questions set
+ * the high class bit (QU) when the first response must be sent directly back
+ * to the querier instead of to ff02::fb. */
+espdrop_mdns_query_response_t espdrop_airdrop_mdns_query_response(
+    const uint8_t *packet,
+    size_t length);
 
 bool espdrop_airdrop_mdns_parse(
     const uint8_t *packet,

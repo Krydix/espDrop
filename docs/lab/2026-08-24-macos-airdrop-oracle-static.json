@@ -1,0 +1,84 @@
+{
+  "date": "2026-08-24",
+  "scope": "read-only static inventory of the native macOS AirDrop implementation",
+  "host": {
+    "productVersion": "26.6.2",
+    "buildVersion": "25G83",
+    "architecture": "arm64",
+    "binary": "/usr/libexec/sharingd",
+    "binarySha256": "c1923bb10f5d2842c119e1eff0c4aa5c45a248aaad1da61436b70fc39169ae77"
+  },
+  "confirmed": {
+    "service": "_airdrop._tcp.",
+    "messageOrder": [
+      "Hello",
+      "Discover",
+      "Ask",
+      "Upload",
+      "Exchange",
+      "IdentityShare",
+      "Error"
+    ],
+    "askItemFields": [
+      "FileName",
+      "FileType",
+      "FileSubType",
+      "FileSize",
+      "FileBomPath",
+      "FileIsDirectory",
+      "ShouldConvertMediaFormats"
+    ],
+    "askFields": [
+      "TransferType",
+      "SenderID",
+      "BundleID",
+      "SenderComputerName",
+      "SenderModelName",
+      "Items",
+      "Files",
+      "ItemsDescription",
+      "FileIcon",
+      "SmallFileIcon",
+      "ConvertMediaFormats",
+      "CustomPayload",
+      "PairingPin",
+      "SenderIdentityAuthTag"
+    ],
+    "uploadModelFields": [
+      "totalBytes",
+      "contentType",
+      "data",
+      "uploadComplete"
+    ],
+    "uploadContentTypes": [
+      "application/zip",
+      "application/x-cpio",
+      "application/x-dvzip",
+      "application/octet-stream"
+    ],
+    "previewPipeline": [
+      "decode caller preview data as an image",
+      "resize through SFResizedCGImage with native bound 0x100000",
+      "encode the resized CGImage back to Data"
+    ]
+  },
+  "currentEspDropDifferences": [
+    "Ask item omits FileSize",
+    "Ask omits FileIcon",
+    "Ask omits SmallFileIcon",
+    "Ask omits a caller-supplied item preview"
+  ],
+  "unknown": [
+    "exact encoded image format and dimensions for FileIcon and SmallFileIcon",
+    "whether Hello replaces or precedes the legacy Discover request on this receiver path",
+    "exact HTTP header ordering and upload completion signaling on the current OS",
+    "exact DVZip block scheduling and flush behavior"
+  ],
+  "method": [
+    "dyld_info exports and disassembly",
+    "nm imported symbols demangled with swift-demangle",
+    "Mach-O Swift reflection strings",
+    "Mach-O constant-string cross references"
+  ],
+  "copyrightBoundary": "Protocol facts and data-model names only; no Apple implementation code is copied into espDrop."
+}

@@ -55,6 +55,19 @@ espdrop_table_result_t espdrop_peer_table_select_unique_airdrop_endpoint(
     uint64_t max_age_ms,
     const espdrop_peer_t **peer);
 
+/* Select a live AirDrop/AWDL peer only when proximity is decisive. The best
+ * candidate must meet min_rssi and exceed the runner-up by min_margin_db.
+ * require_complete_endpoint delays selection until DNS-SD supplied the port
+ * and IPv6 tuple; false permits MIF-level selection needed to start AWDL. */
+espdrop_table_result_t espdrop_peer_table_select_airdrop_proximity(
+    const espdrop_peer_table_t *table,
+    uint64_t now_ms,
+    uint64_t max_age_ms,
+    int16_t min_rssi,
+    int16_t min_margin_db,
+    bool require_complete_endpoint,
+    const espdrop_peer_t **peer);
+
 bool espdrop_peer_id_equal(
     const espdrop_peer_id_t *left,
     const espdrop_peer_id_t *right);

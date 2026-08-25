@@ -1,5 +1,6 @@
 #include "espdrop/airdrop_mdns.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define DNS_HEADER_BYTES 12U
@@ -11,6 +12,112 @@
 #define DNS_TYPE_PTR ESPDROP_MDNS_TYPE_PTR
 #define DNS_TYPE_SRV ESPDROP_MDNS_TYPE_SRV
 #define DNS_TYPE_TXT ESPDROP_MDNS_TYPE_TXT
+#define DNS_CLASS_IN 0x0001U
+#define DNS_CLASS_CACHE_FLUSH 0x8001U
+#define DNS_ANNOUNCEMENT_TTL 120U
+#define DNS_AIRDROP_TYPE_NAME_BYTES 21U
+#define DNS_LOCAL_SUFFIX_BYTES 7U
+
+typedef struct {
+    uint8_t *packet;
+    size_t capacity;
+    size_t position;
+    bool failed;
+} dns_writer_t;
+
+static void dns_write_u8(dns_writer_t *writer, uint8_t value)
+{
+    if (writer->failed || writer->position >= writer->capacity) {
+        writer->failed = true;
+        return;
+    }
+    writer->packet[writer->position++] = value;
+}
+
+static void dns_write_u16(dns_writer_t *writer, uint16_t value)
+{
+    dns_write_u8(writer, (uint8_t)(value >> 8U));
+    dns_write_u8(writer, (uint8_t)value);
+}
+
+static void dns_write_u32(dns_writer_t *writer, uint32_t value)
+{
+    dns_write_u16(writer, (uint16_t)(value >> 16U));
+    dns_write_u16(writer, (uint16_t)value);
+}
+
+static void dns_write_bytes(
+    dns_writer_t *writer,
+    const uint8_t *bytes,
+    size_t length)
+{
+    if (writer->failed || length > writer->capacity - writer->position) {
+        writer->failed = true;
+        return;
+    }
+    memcpy(writer->packet + writer->position, bytes, length);
+    writer->position += length;
+}
+
+static bool dns_label_valid(const char *label)
+{
+    if (label == NULL) {
+        return false;
+    }
+    const size_t length = strlen(label);
+    if (length == 0U || length > 63U) {
+        return false;
+    }
+    for (size_t index = 0U; index < length; ++index) {
+        const unsigned char byte = (unsigned char)label[index];
+        if (!((byte >= 'a' && byte <= 'z') ||
+              (byte >= 'A' && byte <= 'Z') ||
+              (byte >= '0' && byte <= '9') || byte == '-')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void dns_write_label(dns_writer_t *writer, const char *label)
+{
+    const size_t length = strlen(label);
+    dns_write_u8(writer, (uint8_t)length);
+    dns_write_bytes(writer, (const uint8_t *)label, length);
+}
+
+static void dns_write_airdrop_type(dns_writer_t *writer)
+{
+    dns_write_label(writer, "_airdrop");
+    dns_write_label(writer, "_tcp");
+    dns_write_label(writer, "local");
+    dns_write_u8(writer, 0U);
+}
+
+static void dns_write_instance(dns_writer_t *writer, const char *service_id)
+{
+    dns_write_label(writer, service_id);
+    dns_write_airdrop_type(writer);
+}
+
+static void dns_write_host(dns_writer_t *writer, const char *host_name)
+{
+    dns_write_label(writer, host_name);
+    dns_write_label(writer, "local");
+    dns_write_u8(writer, 0U);
+}
+
+static void dns_write_record_head(
+    dns_writer_t *writer,
+    uint16_t type,
+    uint16_t dns_class,
+    uint16_t data_length)
+{
+    dns_write_u16(writer, type);
+    dns_write_u16(writer, dns_class);
+    dns_write_u32(writer, DNS_ANNOUNCEMENT_TTL);
+    dns_write_u16(writer, data_length);
+}
 
 bool espdrop_mdns_build_query(
     uint8_t *packet,
@@ -52,6 +159,76 @@ bool espdrop_mdns_build_query(
     packet[position++] = (uint8_t)(dns_class >> 8U);
     packet[position++] = (uint8_t)dns_class;
     *length = position;
+    return true;
+}
+
+bool espdrop_airdrop_mdns_build_announcement(
+    uint8_t *packet,
+    size_t capacity,
+    size_t *length,
+    const char *service_id,
+    const char *host_name,
+    uint16_t port,
+    uint32_t flags,
+    const uint8_t ipv6[16])
+{
+    if (packet == NULL || length == NULL || ipv6 == NULL || port == 0U ||
+        flags == 0U || !dns_label_valid(service_id) ||
+        !dns_label_valid(host_name) || capacity < DNS_HEADER_BYTES) {
+        return false;
+    }
+    char txt[32];
+    const int txt_length = snprintf(txt, sizeof(txt), "flags=%lu",
+                                    (unsigned long)flags);
+    if (txt_length <= 0 || (size_t)txt_length > UINT8_MAX ||
+        (size_t)txt_length >= sizeof(txt)) {
+        return false;
+    }
+
+    dns_writer_t writer = {
+        .packet = packet,
+        .capacity = capacity,
+    };
+    dns_write_u16(&writer, 0U);
+    dns_write_u16(&writer, 0x8400U);
+    dns_write_u16(&writer, 0U);
+    dns_write_u16(&writer, 1U);
+    dns_write_u16(&writer, 0U);
+    dns_write_u16(&writer, 3U);
+
+    const uint16_t instance_bytes = (uint16_t)(
+        1U + strlen(service_id) + DNS_AIRDROP_TYPE_NAME_BYTES);
+    const uint16_t host_bytes = (uint16_t)(
+        1U + strlen(host_name) + DNS_LOCAL_SUFFIX_BYTES);
+
+    dns_write_airdrop_type(&writer);
+    dns_write_record_head(&writer, DNS_TYPE_PTR, DNS_CLASS_IN,
+                          instance_bytes);
+    dns_write_instance(&writer, service_id);
+
+    dns_write_instance(&writer, service_id);
+    dns_write_record_head(&writer, DNS_TYPE_SRV, DNS_CLASS_CACHE_FLUSH,
+                          (uint16_t)(6U + host_bytes));
+    dns_write_u16(&writer, 0U);
+    dns_write_u16(&writer, 0U);
+    dns_write_u16(&writer, port);
+    dns_write_host(&writer, host_name);
+
+    dns_write_instance(&writer, service_id);
+    dns_write_record_head(&writer, DNS_TYPE_TXT, DNS_CLASS_CACHE_FLUSH,
+                          (uint16_t)(1U + (size_t)txt_length));
+    dns_write_u8(&writer, (uint8_t)txt_length);
+    dns_write_bytes(&writer, (const uint8_t *)txt, (size_t)txt_length);
+
+    dns_write_host(&writer, host_name);
+    dns_write_record_head(&writer, DNS_TYPE_AAAA, DNS_CLASS_CACHE_FLUSH, 16U);
+    dns_write_bytes(&writer, ipv6, 16U);
+
+    if (writer.failed) {
+        *length = 0U;
+        return false;
+    }
+    *length = writer.position;
     return true;
 }
 
@@ -134,6 +311,58 @@ static bool decode_name(
         }
     }
     return false;
+}
+
+espdrop_mdns_query_response_t espdrop_airdrop_mdns_query_response(
+    const uint8_t *packet,
+    size_t length)
+{
+    if (packet == NULL || length < DNS_HEADER_BYTES ||
+        (read_u16(packet + 2U) & 0x8000U) != 0U) {
+        return ESPDROP_MDNS_QUERY_RESPONSE_NONE;
+    }
+    const uint16_t questions = read_u16(packet + 4U);
+    if (questions == 0U || questions > DNS_MAX_RECORDS) {
+        return ESPDROP_MDNS_QUERY_RESPONSE_NONE;
+    }
+    bool matched = false;
+    bool unicast = false;
+    size_t offset = DNS_HEADER_BYTES;
+    for (uint16_t question = 0U; question < questions; ++question) {
+        char name[ESPDROP_MDNS_NAME_BYTES];
+        size_t consumed = 0U;
+        if (!decode_name(packet, length, offset, name, sizeof(name),
+                         &consumed) || offset + consumed + 4U > length) {
+            return ESPDROP_MDNS_QUERY_RESPONSE_NONE;
+        }
+        offset += consumed;
+        const uint16_t type = read_u16(packet + offset);
+        const uint16_t dns_class = read_u16(packet + offset + 2U);
+        offset += 4U;
+        const bool question_matches =
+            (strcmp(name, "_airdrop._tcp.local") == 0 &&
+             (type == DNS_TYPE_PTR || type == 255U)) ||
+            (is_airdrop_instance(name) &&
+             (type == DNS_TYPE_SRV || type == DNS_TYPE_TXT ||
+              type == 255U));
+        if (question_matches) {
+            matched = true;
+            unicast = unicast || (dns_class & 0x8000U) != 0U;
+        }
+    }
+    if (!matched) {
+        return ESPDROP_MDNS_QUERY_RESPONSE_NONE;
+    }
+    return unicast ? ESPDROP_MDNS_QUERY_RESPONSE_UNICAST
+                   : ESPDROP_MDNS_QUERY_RESPONSE_MULTICAST;
+}
+
+bool espdrop_airdrop_mdns_query_requests_service(
+    const uint8_t *packet,
+    size_t length)
+{
+    return espdrop_airdrop_mdns_query_response(packet, length) !=
+           ESPDROP_MDNS_QUERY_RESPONSE_NONE;
 }
 
 static espdrop_airdrop_service_t *find_service(

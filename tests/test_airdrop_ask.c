@@ -12,6 +12,7 @@ static const espdrop_airdrop_ask_file_t ask = {
     .transfer_id = "00112233-4455-4677-8899-AABBCCDDEEFF",
     .file_name = "hello.jpg",
     .file_type = "public.jpeg",
+    .file_size = 53359U,
 };
 
 int main(int argc, char **argv)
@@ -26,9 +27,14 @@ int main(int argc, char **argv)
                   strlen(ask.transfer_id)) != NULL);
     assert(memmem(body, body_bytes, "TransferType", 12U) != NULL);
     assert(memmem(body, body_bytes, "FileBomPath", 11U) != NULL);
+    assert(memmem(body, body_bytes, "FileSize", 8U) != NULL);
 
     espdrop_airdrop_ask_file_t invalid = ask;
     invalid.file_name = "../hello.jpg";
+    assert(espdrop_airdrop_build_ask_body(
+               body, sizeof(body), &invalid) == 0U);
+    invalid = ask;
+    invalid.file_size = 0U;
     assert(espdrop_airdrop_build_ask_body(
                body, sizeof(body), &invalid) == 0U);
     invalid = ask;

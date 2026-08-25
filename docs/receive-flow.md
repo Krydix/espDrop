@@ -35,10 +35,17 @@ microSD only after explicit local consent.
 **REFERENCE:** OpenDrop historically receives
 `application/x-cpio` and extracts an archive.
 
-**REFERENCE (iOS 26 capture):** a recent iPhone sent photo uploads as
-`application/x-dvzip`, a block wrapper around ODC cpio. This must be
-implemented as a bounded streaming decoder before espDrop claims iOS 26 photo
-receive compatibility.
+**CONFIRMED (anonymous iOS 26 to macOS 26.6.2 control):** a newly configured,
+unrelated iPhone waited for explicit `/Ask` acceptance, then opened a distinct
+TCP/TLS connection for `/Upload`. The Mac logged CPIO archiving with adaptive
+compression and no `/Hello` request. The exact encrypted content type and
+adaptive block framing still require capture at an espDrop-controlled TLS
+receiver.
+
+**REFERENCE (separate iOS 26 capture):** a recent iPhone sent photo uploads as
+`application/x-dvzip`, a block wrapper around ODC cpio. A bounded streaming
+decoder remains necessary before espDrop claims iOS 26 photo receive
+compatibility.
 
 **UNKNOWN:** container choice for PNG, PDF, TXT, multiple photos, and Files-app
 documents on the target phone.

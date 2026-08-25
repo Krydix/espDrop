@@ -354,6 +354,78 @@ bool espdrop_awdl_decode_data(
            ESPDROP_AWDL_DATA_DECODE_OK;
 }
 
+size_t espdrop_awdl_decode_data_frames(
+    const uint8_t *frame,
+    size_t length,
+    espdrop_awdl_data_t *data,
+    size_t capacity,
+    espdrop_awdl_data_decode_result_t *result)
+{
+    if (result == NULL) {
+        return 0U;
+    }
+    *result = ESPDROP_AWDL_DATA_DECODE_INVALID_ARGUMENT;
+    if (frame == NULL || data == NULL || capacity == 0U) {
+        return 0U;
+    }
+
+    espdrop_awdl_data_t first;
+    *result = espdrop_awdl_decode_data_ex(frame, length, &first);
+    if (*result != ESPDROP_AWDL_DATA_DECODE_OK) {
+        return 0U;
+    }
+    if (!first.amsdu) {
+        data[0] = first;
+        return 1U;
+    }
+
+    size_t cursor = IEEE80211_HEADER_BYTES + IEEE80211_QOS_BYTES;
+    size_t count = 0U;
+    while (cursor < length) {
+        if (length - cursor < AMSDU_SUBFRAME_HEADER_BYTES) {
+            *result = ESPDROP_AWDL_DATA_DECODE_AMSDU_TOO_SHORT;
+            return 0U;
+        }
+        if (count >= capacity) {
+            *result = ESPDROP_AWDL_DATA_DECODE_AMSDU_CAPACITY;
+            return 0U;
+        }
+        const uint16_t msdu_length = read_be16(frame + cursor + 12U);
+        if ((size_t)msdu_length >
+            length - cursor - AMSDU_SUBFRAME_HEADER_BYTES) {
+            *result = ESPDROP_AWDL_DATA_DECODE_AMSDU_LENGTH;
+            return 0U;
+        }
+
+        espdrop_awdl_data_t *item = &data[count];
+        memset(item, 0, sizeof(*item));
+        item->qos = true;
+        item->amsdu = true;
+        memcpy(item->destination, frame + cursor, 6U);
+        memcpy(item->source, frame + cursor + 6U, 6U);
+        *result = decode_msdu(
+            frame + cursor + AMSDU_SUBFRAME_HEADER_BYTES,
+            msdu_length, item);
+        if (*result != ESPDROP_AWDL_DATA_DECODE_OK) {
+            return 0U;
+        }
+        ++count;
+        cursor += AMSDU_SUBFRAME_HEADER_BYTES + msdu_length;
+        if (cursor < length) {
+            const size_t padding =
+                (4U - ((AMSDU_SUBFRAME_HEADER_BYTES + msdu_length) % 4U)) %
+                4U;
+            if (padding > length - cursor) {
+                *result = ESPDROP_AWDL_DATA_DECODE_AMSDU_TOO_SHORT;
+                return 0U;
+            }
+            cursor += padding;
+        }
+    }
+    *result = ESPDROP_AWDL_DATA_DECODE_OK;
+    return count;
+}
+
 bool espdrop_awdl_decode_ipv6(
     const espdrop_awdl_data_t *data,
     espdrop_awdl_ipv6_t *ipv6)

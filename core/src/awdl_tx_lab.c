@@ -13,6 +13,7 @@
 #include "espdrop/awdl_election.h"
 #include "espdrop/awdl_netif.h"
 #include "espdrop/awdl_tx.h"
+#include "espdrop/espdrop.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -20,13 +21,28 @@
 #ifndef CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
 #define CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP 0
 #endif
+#ifndef CONFIG_ESPDROP_AWDL_AUTO_TARGET_SETTLE_MS
+#define CONFIG_ESPDROP_AWDL_AUTO_TARGET_SETTLE_MS 1000
+#endif
+#ifndef CONFIG_ESPDROP_AWDL_AUTO_TARGET_MAX_AGE_MS
+#define CONFIG_ESPDROP_AWDL_AUTO_TARGET_MAX_AGE_MS 3000
+#endif
+#ifndef CONFIG_ESPDROP_AWDL_AUTO_TARGET_MIN_RSSI
+#define CONFIG_ESPDROP_AWDL_AUTO_TARGET_MIN_RSSI -70
+#endif
+#ifndef CONFIG_ESPDROP_AWDL_AUTO_TARGET_MARGIN_DB
+#define CONFIG_ESPDROP_AWDL_AUTO_TARGET_MARGIN_DB 8
+#endif
 #if CONFIG_ESPDROP_AWDL_TX_LAB
 #include "esp_private/wifi.h"
 #endif
 
-#if CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
-#define AWDL_TX_LAB_WINDOW_MS 90000U
-#define AWDL_TX_LAB_PROBE_LIMIT 86U
+#if CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+#define AWDL_TX_LAB_WINDOW_MS 120000U
+#define AWDL_TX_LAB_PROBE_LIMIT 117U
+#elif CONFIG_ESPDROP_AIRDROP_UPLOAD_LAB
+#define AWDL_TX_LAB_WINDOW_MS 180000U
+#define AWDL_TX_LAB_PROBE_LIMIT 176U
 #elif CONFIG_ESPDROP_AIRDROP_ASK_LAB
 #define AWDL_TX_LAB_WINDOW_MS 60000U
 #define AWDL_TX_LAB_PROBE_LIMIT 58U
@@ -44,6 +60,9 @@
 #define AWDL_TX_LAB_START_DELAY_MS 1500U
 #endif
 #define AWDL_TX_LAB_CHANNEL_WINDOW_GUARD_US 4000U
+#define AWDL_TX_LAB_NETIF_BURST_US 32000U
+#define AWDL_TX_LAB_NETIF_BATCH_FRAMES 4U
+#define AWDL_TX_LAB_NETIF_FRAMES_PER_WINDOW 16U
 #define AWDL_TX_LAB_AWDL_SEQUENCE_OFFSET 34U
 #define AWDL_TX_LAB_ELECTION_PEERS ESPDROP_AWDL_ELECTION_MAX_PEERS
 #define AWDL_TX_LAB_FIXED_CHANNEL_PEER_TIMEOUT_US 5000000ULL
@@ -65,12 +84,18 @@ static awdl_lab_peer_mif_t peer_mifs[AWDL_TX_LAB_ELECTION_PEERS];
 static uint8_t station_mac[6];
 static uint8_t target_mac[6];
 static bool has_target_mac;
+static espdrop_awdl_target_mode_t target_mode =
+    CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+        ? ESPDROP_AWDL_TARGET_AUTO
+        : ESPDROP_AWDL_TARGET_NONE;
+static bool target_control_configured;
 static uint8_t schedule_mac[6];
 static bool has_schedule_mac;
 static char device_name[ESPDROP_AWDL_TX_NAME_BYTES];
 static bool has_state;
 static bool has_target_state;
 static bool task_started;
+static bool run_requested;
 static volatile bool netif_ready;
 static uint32_t directed_reactions;
 static uint32_t neighbor_advertisements;
@@ -82,6 +107,10 @@ static volatile uint32_t data_radio_completed;
 static volatile uint32_t data_radio_success;
 static volatile uint32_t data_radio_failed;
 static volatile uint32_t unknown_data_radio_completed;
+static uint64_t auto_target_first_airdrop_us;
+static uint64_t auto_target_first_endpoint_us;
+static uint64_t auto_target_last_status_us;
+static uint64_t auto_target_last_endpoint_status_us;
 
 static awdl_lab_peer_mif_t *find_peer_mif(const uint8_t source[6])
 {
@@ -146,7 +175,7 @@ static bool dynamic_election_candidate(
     const espdrop_awdl_election_state_t *elected =
         espdrop_awdl_election_state(&election);
     if (changed) {
-        ESP_LOGW(TAG,
+        ESP_LOGI(TAG,
                  "TX-LAB-ELECTION self=%02x:%02x:%02x:%02x:%02x:%02x "
                  "sync=%02x:%02x:%02x:%02x:%02x:%02x "
                  "master=%02x:%02x:%02x:%02x:%02x:%02x "
@@ -271,6 +300,7 @@ static void lab_tx_task(void *argument)
     uint32_t errors = 0U;
     uint32_t windows = 0U;
     uint16_t sequence = 0U;
+    uint64_t last_schedule_warning_us = 0U;
     const int64_t started_us = esp_timer_get_time();
     const uint64_t deadline_us =
         (uint64_t)started_us + AWDL_TX_LAB_WINDOW_MS * 1000ULL;
@@ -312,9 +342,18 @@ static void lab_tx_task(void *argument)
                   &snapshot, 6U, before_wait_us,
                   AWDL_TX_LAB_CHANNEL_WINDOW_GUARD_US, &scheduled_us);
         if (!scheduled) {
-            ESP_LOGE(TAG, "TX-LAB-SCHEDULE unavailable");
-            ++errors;
-            break;
+            /* Election and target MIFs are updated independently.  A single
+             * snapshot can therefore have no common channel even though the
+             * next peer update will restore one.  Keep the bounded worker
+             * alive instead of permanently losing the host-requested run. */
+            if (last_schedule_warning_us == 0U ||
+                before_wait_us - last_schedule_warning_us >= 1000000ULL) {
+                ESP_LOGW(TAG,
+                         "TX-LAB-SCHEDULE waiting-for-common-window");
+                last_schedule_warning_us = before_wait_us;
+            }
+            vTaskDelay(pdMS_TO_TICKS(20U));
+            continue;
         }
         if (scheduled_us >= deadline_us) {
             break;
@@ -362,8 +401,31 @@ static void lab_tx_task(void *argument)
         }
 
         if (netif_ready) {
-            vTaskDelay(pdMS_TO_TICKS(2U));
-            const size_t netif_flushed = espdrop_awdl_netif_flush(2U);
+            size_t netif_flushed = 0U;
+            const espdrop_awdl_netif_stats_t current_netif =
+                espdrop_awdl_netif_stats();
+            if (current_netif.airdrop_tcp_connected == 0U) {
+                /* Preserve the exact admission profile that completed the
+                 * first stock-iPhone TCP/TLS/AirDrop transfers. */
+                vTaskDelay(pdMS_TO_TICKS(2U));
+                netif_flushed = espdrop_awdl_netif_flush(2U);
+            } else {
+                /* Once admitted, drain larger bounded batches so a real
+                 * image does not starve behind the proven SYN pacing. */
+                const uint64_t netif_deadline_us =
+                    actual_us + AWDL_TX_LAB_NETIF_BURST_US;
+                while (netif_flushed <
+                           AWDL_TX_LAB_NETIF_FRAMES_PER_WINDOW &&
+                       (uint64_t)esp_timer_get_time() < netif_deadline_us) {
+                    const size_t remaining =
+                        AWDL_TX_LAB_NETIF_FRAMES_PER_WINDOW - netif_flushed;
+                    const size_t batch =
+                        remaining < AWDL_TX_LAB_NETIF_BATCH_FRAMES
+                            ? remaining : AWDL_TX_LAB_NETIF_BATCH_FRAMES;
+                    netif_flushed += espdrop_awdl_netif_flush(batch);
+                    vTaskDelay(pdMS_TO_TICKS(2U));
+                }
+            }
             if (netif_flushed != 0U) {
                 ESP_LOGI(TAG, "TX-LAB-NETIF flushed=%u",
                          (unsigned)netif_flushed);
@@ -383,7 +445,11 @@ static void lab_tx_task(void *argument)
              "unknown_data_radio_completed=%lu neighbor_advertisements=%lu "
              "echo_replies=%lu peer_ready=%u "
              "netif_tx_observed=%lu netif_tx_enqueued=%lu "
-             "netif_tx_submitted=%lu netif_tx_accepted=%lu "
+             "netif_tx_dropped=%lu netif_tx_invalid_size=%lu "
+             "netif_tx_queue_full=%lu netif_tx_last_dropped_length=%lu "
+             "netif_tx_queue_high_water=%lu "
+             "netif_tx_submitted=%lu netif_tx_redundant_submitted=%lu "
+             "netif_tx_accepted=%lu "
              "netif_tx_radio_success=%lu netif_tx_radio_failed=%lu "
              "netif_rx_enqueued=%lu netif_rx_injected=%lu "
              "netif_rx_dropped=%lu mdns_queries=%lu mdns_packets=%lu "
@@ -400,7 +466,13 @@ static void lab_tx_task(void *argument)
              "peer_mapping_failures=%lu tcp_tx_segments=%lu "
              "tcp_tx_syn=%lu tcp_tx_radio_success=%lu "
              "tcp_tx_radio_failed=%lu tcp_rx_segments=%lu "
-             "tcp_rx_syn_ack=%lu tcp_rx_rst=%lu",
+             "tcp_rx_syn_ack=%lu tcp_rx_rst=%lu tcp_rx_fin=%lu "
+             "tcp_rx_zero_window=%lu tcp_tx_payload_bytes=%lu "
+             "tcp_rx_payload_bytes=%lu tcp_tx_last_seq=%lu "
+             "tcp_tx_last_ack=%lu tcp_tx_last_window=%u "
+             "tcp_tx_last_payload=%u tcp_rx_last_seq=%lu "
+             "tcp_rx_last_ack=%lu tcp_rx_last_window=%u "
+             "tcp_rx_last_payload=%u",
              (unsigned long)attempted, (unsigned long)accepted,
              (unsigned long)errors,
              (unsigned long)action_radio_completed,
@@ -416,7 +488,13 @@ static void lab_tx_task(void *argument)
              netif_ready ? 1U : 0U,
              (unsigned long)netif.tx_observed,
              (unsigned long)netif.tx_enqueued,
+             (unsigned long)netif.tx_dropped,
+             (unsigned long)netif.tx_invalid_size,
+             (unsigned long)netif.tx_queue_full,
+             (unsigned long)netif.tx_last_dropped_length,
+             (unsigned long)netif.tx_queue_high_water,
              (unsigned long)netif.tx_submitted,
+             (unsigned long)netif.tx_redundant_submitted,
              (unsigned long)netif.tx_accepted,
              (unsigned long)netif.tx_radio_success,
              (unsigned long)netif.tx_radio_failed,
@@ -449,7 +527,22 @@ static void lab_tx_task(void *argument)
              (unsigned long)netif.tcp_tx_radio_failed,
              (unsigned long)netif.tcp_rx_segments,
              (unsigned long)netif.tcp_rx_syn_ack,
-             (unsigned long)netif.tcp_rx_rst);
+             (unsigned long)netif.tcp_rx_rst,
+             (unsigned long)netif.tcp_rx_fin,
+             (unsigned long)netif.tcp_rx_zero_window,
+             (unsigned long)netif.tcp_tx_payload_bytes,
+             (unsigned long)netif.tcp_rx_payload_bytes,
+             (unsigned long)netif.tcp_tx_last_sequence,
+             (unsigned long)netif.tcp_tx_last_acknowledgment,
+             (unsigned)netif.tcp_tx_last_window,
+             (unsigned)netif.tcp_tx_last_payload_length,
+             (unsigned long)netif.tcp_rx_last_sequence,
+             (unsigned long)netif.tcp_rx_last_acknowledgment,
+             (unsigned)netif.tcp_rx_last_window,
+             (unsigned)netif.tcp_rx_last_payload_length);
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    task_started = false;
+    xSemaphoreGive(state_lock);
     vTaskDelete(NULL);
 }
 #endif
@@ -475,8 +568,15 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
         return ESP_ERR_INVALID_STATE;
     }
 #endif
-    has_target_mac = parse_mac(CONFIG_ESPDROP_AWDL_LAB_TARGET_MAC,
-                               target_mac);
+    if (!target_control_configured) {
+        has_target_mac = parse_mac(CONFIG_ESPDROP_AWDL_LAB_TARGET_MAC,
+                                   target_mac);
+        target_mode = has_target_mac
+            ? ESPDROP_AWDL_TARGET_MANUAL
+            : CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP
+                  ? ESPDROP_AWDL_TARGET_AUTO
+                  : ESPDROP_AWDL_TARGET_NONE;
+    }
     has_schedule_mac = parse_mac(CONFIG_ESPDROP_AWDL_LAB_SCHEDULE_MAC,
                                  schedule_mac);
     if (!has_schedule_mac && has_target_mac) {
@@ -496,11 +596,10 @@ esp_err_t espdrop_awdl_tx_lab_init(const char *name)
                  target_mac[0], target_mac[1], target_mac[2], target_mac[3],
                  target_mac[4], target_mac[5]);
     }
-    if (!has_target_mac &&
-        CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP) {
+    if (!has_target_mac && target_mode == ESPDROP_AWDL_TARGET_AUTO) {
         ESP_LOGW(TAG,
-                 "lab auto-target armed; waiting for a complete live "
-                 "_airdrop._tcp MIF");
+                 "lab auto-target armed; waiting for live _airdrop._tcp "
+                 "MIF or resolved mDNS endpoint");
     }
     if (has_schedule_mac && !CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION) {
         ESP_LOGW(TAG,
@@ -544,6 +643,10 @@ void espdrop_awdl_tx_lab_observe_mif(
     const bool has_observed_peer = espdrop_awdl_tx_state_from_mif(
         &observed_peer, station_mac, action->source, device_name,
         action->phy_tx, mif, received_at_us);
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    const bool auto_target_enabled =
+        target_mode == ESPDROP_AWDL_TARGET_AUTO;
+    xSemaphoreGive(state_lock);
 #if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
     const bool has_candidate = dynamic_election_candidate(
         action, mif, received_at_us, &candidate);
@@ -553,10 +656,80 @@ void espdrop_awdl_tx_lab_observe_mif(
         action->phy_tx, mif, received_at_us);
 #endif
 
+#if CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_LAB
+    if (has_candidate) {
+        candidate.advertise_airdrop_tcp = true;
+        candidate.airdrop_port =
+            CONFIG_ESPDROP_AIRDROP_RECEIVER_ORACLE_PORT;
+    }
+#endif
+
+    uint8_t proximity_target[6] = {0};
+    int16_t proximity_rssi = -127;
+    espdrop_table_result_t proximity_result = ESPDROP_TABLE_NOT_FOUND;
+    bool proximity_attempted = false;
+    if (!has_target_mac && auto_target_enabled) {
+        if (advertises_airdrop_tcp &&
+            auto_target_first_airdrop_us == 0U) {
+            auto_target_first_airdrop_us = received_at_us;
+        }
+        /* Apple peers commonly put service responses in one full MIF and
+         * follow it with compact MIFs. Keep reevaluating the remembered,
+         * freshness-bounded evidence on every valid observation instead of
+         * requiring the service record to be repeated. */
+        if (auto_target_first_airdrop_us != 0U &&
+            received_at_us >= auto_target_first_airdrop_us &&
+            received_at_us - auto_target_first_airdrop_us >=
+            (uint64_t)CONFIG_ESPDROP_AWDL_AUTO_TARGET_SETTLE_MS * 1000ULL) {
+            espdrop_peer_table_t *table = espdrop_peers();
+            if (table != NULL && espdrop_lock_peers()) {
+                const espdrop_peer_t *selected = NULL;
+                proximity_result =
+                    espdrop_peer_table_select_airdrop_proximity(
+                        table, received_at_us / 1000U,
+                        CONFIG_ESPDROP_AWDL_AUTO_TARGET_MAX_AGE_MS,
+                        CONFIG_ESPDROP_AWDL_AUTO_TARGET_MIN_RSSI,
+                        CONFIG_ESPDROP_AWDL_AUTO_TARGET_MARGIN_DB, false,
+                        &selected);
+                if (proximity_result == ESPDROP_TABLE_OK &&
+                    selected != NULL) {
+                    memcpy(proximity_target, selected->awdl_mac,
+                           sizeof(proximity_target));
+                    proximity_rssi = selected->awdl_rssi;
+                }
+                espdrop_unlock_peers();
+                proximity_attempted = true;
+            }
+        }
+    }
+
     bool start_task = false;
     bool auto_targeted = false;
     bool peer_became_ready = false;
     xSemaphoreTake(state_lock, portMAX_DELAY);
+    if (!has_target_mac && proximity_result == ESPDROP_TABLE_OK) {
+        memcpy(target_mac, proximity_target, sizeof(target_mac));
+        has_target_mac = true;
+        auto_targeted = true;
+    }
+    if (!has_target_mac && auto_target_enabled &&
+        has_observed_peer && espdrop_awdl_mif_peer_valid(mif) &&
+        !netif_ready) {
+        /* Bootstrap multicast DNS before choosing a unicast target. This is
+         * required for macOS peers, which can advertise AirDrop continuously
+         * through mDNS while omitting the service from most AWDL MIFs. */
+        netif_ready = true;
+        peer_became_ready = true;
+    }
+    if (has_target_mac && has_observed_peer &&
+        memcmp(action->source, target_mac, sizeof(target_mac)) == 0) {
+        target_state = observed_peer;
+        has_target_state = true;
+        if (espdrop_awdl_mif_peer_valid(mif) && !netif_ready) {
+            netif_ready = true;
+            peer_became_ready = true;
+        }
+    }
 #if CONFIG_ESPDROP_AWDL_LAB_DYNAMIC_ELECTION
     if (has_candidate) {
         tx_state = candidate;
@@ -573,28 +746,16 @@ void espdrop_awdl_tx_lab_observe_mif(
         has_state = true;
     }
 #endif
-    if (!has_target_mac &&
-        CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP &&
-        advertises_airdrop_tcp && espdrop_awdl_mif_peer_valid(mif)) {
-        memcpy(target_mac, action->source, sizeof(target_mac));
-        has_target_mac = true;
-        auto_targeted = true;
-    }
-    if (has_target_mac && has_observed_peer &&
-        memcmp(action->source, target_mac, sizeof(target_mac)) == 0) {
-        target_state = observed_peer;
-        has_target_state = true;
-        if (espdrop_awdl_mif_peer_valid(mif) && !netif_ready) {
-            netif_ready = true;
-            peer_became_ready = true;
-        }
-    }
     const bool target_is_live =
         !has_target_mac ||
         memcmp(action->source, target_mac, sizeof(target_mac)) == 0;
-    if (!task_started && has_state && target_is_live && netif_ready &&
-        (!CONFIG_ESPDROP_AWDL_LAB_AUTO_TARGET_AIRDROP || has_target_mac) &&
-        (!has_target_mac || has_target_state)) {
+    const bool target_ready = has_target_mac
+        ? has_target_state
+        : auto_target_enabled;
+    if (run_requested && !task_started && has_state && target_is_live &&
+        netif_ready &&
+        target_ready) {
+        run_requested = false;
         task_started = true;
         start_task = true;
     }
@@ -604,28 +765,43 @@ void espdrop_awdl_tx_lab_observe_mif(
         ESP_LOGW(TAG,
                  "TX-LAB-AUTO-TARGET peer="
                  "%02x:%02x:%02x:%02x:%02x:%02x service=_airdrop._tcp "
-                 "distance=%lu",
-                 action->source[0], action->source[1], action->source[2],
-                 action->source[3], action->source[4], action->source[5],
-                 (unsigned long)(mif->has_election_v2
-                     ? mif->election_v2.distance_to_master : UINT32_MAX));
-        if (!has_observed_peer) {
+                 "rssi=%d settle_ms=%d margin_db=%d",
+                 proximity_target[0], proximity_target[1],
+                 proximity_target[2], proximity_target[3],
+                 proximity_target[4], proximity_target[5], proximity_rssi,
+                 CONFIG_ESPDROP_AWDL_AUTO_TARGET_SETTLE_MS,
+                 CONFIG_ESPDROP_AWDL_AUTO_TARGET_MARGIN_DB);
+        if (!has_observed_peer ||
+            memcmp(action->source, proximity_target,
+                   sizeof(proximity_target)) != 0) {
             ESP_LOGW(TAG,
                      "TX-LAB-TARGET-WAIT peer="
                      "%02x:%02x:%02x:%02x:%02x:%02x "
                      "reason=incomplete-synchronization-state",
-                     action->source[0], action->source[1], action->source[2],
-                     action->source[3], action->source[4], action->source[5]);
+                     proximity_target[0], proximity_target[1],
+                     proximity_target[2], proximity_target[3],
+                     proximity_target[4], proximity_target[5]);
         }
+    } else if (proximity_attempted &&
+               received_at_us - auto_target_last_status_us >= 1000000ULL) {
+        auto_target_last_status_us = received_at_us;
+        ESP_LOGW(TAG,
+                 "TX-LAB-AUTO-TARGET result=%s min_rssi=%d margin_db=%d",
+                 proximity_result == ESPDROP_TABLE_AMBIGUOUS
+                     ? "ambiguous" : "waiting",
+                 CONFIG_ESPDROP_AWDL_AUTO_TARGET_MIN_RSSI,
+                 CONFIG_ESPDROP_AWDL_AUTO_TARGET_MARGIN_DB);
     }
 
     if (peer_became_ready) {
         ESP_LOGW(TAG,
                  "TX-LAB-PEER-READY peer="
                  "%02x:%02x:%02x:%02x:%02x:%02x "
-                 "evidence=mif-version-device-class ipv6=derived-rfc4291",
+                 "evidence=mif-version-device-class ipv6=derived-rfc4291 "
+                 "scope=%s",
                  action->source[0], action->source[1], action->source[2],
-                 action->source[3], action->source[4], action->source[5]);
+                 action->source[3], action->source[4], action->source[5],
+                 has_target_mac ? "selected-target" : "mdns-bootstrap");
     }
 
     if (start_task && xTaskCreate(lab_tx_task, "awdl_tx_lab", 5120, NULL,
@@ -683,13 +859,253 @@ bool espdrop_awdl_tx_lab_wants_mif(const uint8_t source[6])
 bool espdrop_awdl_tx_lab_target(uint8_t output[6])
 {
 #if CONFIG_ESPDROP_AWDL_TX_LAB
-    if (output == NULL || !has_target_mac) {
+    if (output == NULL) {
         return false;
     }
-    memcpy(output, target_mac, sizeof(target_mac));
-    return true;
+    if (state_lock == NULL) {
+        if (!has_target_mac) {
+            return false;
+        }
+        memcpy(output, target_mac, sizeof(target_mac));
+        return true;
+    }
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    const bool available = has_target_mac;
+    if (available) {
+        memcpy(output, target_mac, sizeof(target_mac));
+    }
+    xSemaphoreGive(state_lock);
+    return available;
 #else
     (void)output;
+    return false;
+#endif
+}
+
+esp_err_t espdrop_awdl_tx_lab_set_target(const uint8_t target[6])
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    static const uint8_t zero[6];
+    if (target == NULL || memcmp(target, zero, sizeof(zero)) == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (state_lock == NULL) {
+        memcpy(target_mac, target, sizeof(target_mac));
+        has_target_mac = true;
+        has_target_state = false;
+        target_mode = ESPDROP_AWDL_TARGET_MANUAL;
+        target_control_configured = true;
+        return ESP_OK;
+    }
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    memcpy(target_mac, target, sizeof(target_mac));
+    has_target_mac = true;
+    has_target_state = false;
+    target_mode = ESPDROP_AWDL_TARGET_MANUAL;
+    target_control_configured = true;
+    const awdl_lab_peer_mif_t *saved = find_peer_mif(target);
+    if (saved != NULL) {
+        has_target_state = espdrop_awdl_tx_state_from_mif(
+            &target_state, station_mac, saved->source, device_name,
+            saved->peer_phy_tx, &saved->mif, saved->received_at_us);
+    }
+    xSemaphoreGive(state_lock);
+    return ESP_OK;
+#else
+    (void)target;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t espdrop_awdl_tx_lab_set_target_mode(
+    espdrop_awdl_target_mode_t mode)
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    if (mode != ESPDROP_AWDL_TARGET_NONE &&
+        mode != ESPDROP_AWDL_TARGET_AUTO) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (state_lock == NULL) {
+        target_mode = mode;
+        has_target_mac = false;
+        has_target_state = false;
+        target_control_configured = true;
+        return ESP_OK;
+    }
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    target_mode = mode;
+    has_target_mac = false;
+    has_target_state = false;
+    target_control_configured = true;
+    if (mode == ESPDROP_AWDL_TARGET_AUTO) {
+        auto_target_first_airdrop_us = 0U;
+        auto_target_first_endpoint_us = 0U;
+    }
+    xSemaphoreGive(state_lock);
+    return ESP_OK;
+#else
+    (void)mode;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t espdrop_awdl_tx_lab_request_run(void)
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    if (state_lock == NULL) {
+        if (target_mode == ESPDROP_AWDL_TARGET_NONE || run_requested) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        run_requested = true;
+        espdrop_awdl_netif_request_airdrop_probe();
+        return ESP_OK;
+    }
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    if (run_requested || target_mode == ESPDROP_AWDL_TARGET_NONE) {
+        xSemaphoreGive(state_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    /* Preserve a generation requested while the previous bounded worker is
+     * shutting down. The live worker can service it immediately; if its
+     * deadline wins the race, the next MIF starts a fresh worker instead of
+     * silently losing the host request. */
+    run_requested = true;
+    xSemaphoreGive(state_lock);
+    espdrop_awdl_netif_request_airdrop_probe();
+    return ESP_OK;
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+espdrop_awdl_target_mode_t espdrop_awdl_tx_lab_target_mode(void)
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    if (state_lock == NULL) {
+        return target_mode;
+    }
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    const espdrop_awdl_target_mode_t mode = target_mode;
+    xSemaphoreGive(state_lock);
+    return mode;
+#else
+    return ESPDROP_AWDL_TARGET_NONE;
+#endif
+}
+
+bool espdrop_awdl_tx_lab_target_is_sync_master(void)
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    if (state_lock == NULL) {
+        return false;
+    }
+    bool ready;
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    ready = has_target_mac && has_target_state && has_state &&
+        memcmp(target_state.master, tx_state.master,
+               sizeof(target_state.master)) == 0 &&
+        (target_state.distance_to_master > 1U ||
+         memcmp(target_mac, tx_state.sync_master,
+                sizeof(target_mac)) == 0);
+    xSemaphoreGive(state_lock);
+    return ready;
+#else
+    return false;
+#endif
+}
+
+bool espdrop_awdl_tx_lab_consider_airdrop_endpoints(
+    uint64_t observed_at_us)
+{
+#if CONFIG_ESPDROP_AWDL_TX_LAB
+    if (state_lock == NULL) {
+        return false;
+    }
+
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    if (target_mode != ESPDROP_AWDL_TARGET_AUTO || has_target_mac) {
+        xSemaphoreGive(state_lock);
+        return true;
+    }
+    if (auto_target_first_endpoint_us == 0U) {
+        auto_target_first_endpoint_us = observed_at_us;
+    }
+    const bool settled =
+        observed_at_us >= auto_target_first_endpoint_us &&
+        observed_at_us - auto_target_first_endpoint_us >=
+            (uint64_t)CONFIG_ESPDROP_AWDL_AUTO_TARGET_SETTLE_MS * 1000ULL;
+    xSemaphoreGive(state_lock);
+    if (!settled) {
+        return false;
+    }
+
+    uint8_t selected_mac[6] = {0};
+    int16_t selected_rssi = -127;
+    espdrop_table_result_t selection = ESPDROP_TABLE_NOT_FOUND;
+    espdrop_peer_table_t *table = espdrop_peers();
+    if (table != NULL && espdrop_lock_peers()) {
+        const espdrop_peer_t *selected = NULL;
+        selection = espdrop_peer_table_select_airdrop_proximity(
+            table, observed_at_us / 1000U,
+            CONFIG_ESPDROP_AWDL_AUTO_TARGET_MAX_AGE_MS,
+            CONFIG_ESPDROP_AWDL_AUTO_TARGET_MIN_RSSI,
+            CONFIG_ESPDROP_AWDL_AUTO_TARGET_MARGIN_DB, true, &selected);
+        if (selection == ESPDROP_TABLE_OK && selected != NULL) {
+            memcpy(selected_mac, selected->awdl_mac, sizeof(selected_mac));
+            selected_rssi = selected->awdl_rssi;
+        } else if (observed_at_us - auto_target_last_endpoint_status_us >=
+                   1000000ULL) {
+            auto_target_last_endpoint_status_us = observed_at_us;
+            for (size_t index = 0U; index < table->count; ++index) {
+                const espdrop_peer_t *candidate = &table->peers[index];
+                if (!candidate->airdrop_endpoint_complete) {
+                    continue;
+                }
+                const uint64_t now_ms = observed_at_us / 1000U;
+                const uint64_t awdl_age = candidate->awdl_seen_ms <= now_ms
+                    ? now_ms - candidate->awdl_seen_ms : UINT64_MAX;
+                const uint64_t airdrop_age =
+                    candidate->airdrop_seen_ms <= now_ms
+                        ? now_ms - candidate->airdrop_seen_ms : UINT64_MAX;
+                ESP_LOGW(TAG,
+                         "TX-LAB-AUTO-CANDIDATE peer="
+                         "%02x:%02x:%02x:%02x:%02x:%02x result=%d "
+                         "signals=0x%02x valid=%u rssi=%d awdl_age_ms=%llu "
+                         "airdrop_age_ms=%llu endpoint=1",
+                         candidate->awdl_mac[0], candidate->awdl_mac[1],
+                         candidate->awdl_mac[2], candidate->awdl_mac[3],
+                         candidate->awdl_mac[4], candidate->awdl_mac[5],
+                         selection, (unsigned)candidate->signals,
+                         candidate->awdl.peer_valid ? 1U : 0U,
+                         candidate->awdl_rssi, awdl_age, airdrop_age);
+            }
+        }
+        espdrop_unlock_peers();
+    }
+
+    bool selected_now = false;
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    if (!has_target_mac && selection == ESPDROP_TABLE_OK) {
+        memcpy(target_mac, selected_mac, sizeof(target_mac));
+        has_target_mac = true;
+        selected_now = true;
+    }
+    xSemaphoreGive(state_lock);
+
+    if (selected_now) {
+        ESP_LOGW(TAG,
+                 "TX-LAB-AUTO-TARGET peer="
+                 "%02x:%02x:%02x:%02x:%02x:%02x "
+                 "service=_airdrop._tcp evidence=mdns-endpoint rssi=%d "
+                 "settle_ms=%d margin_db=%d",
+                 selected_mac[0], selected_mac[1], selected_mac[2],
+                 selected_mac[3], selected_mac[4], selected_mac[5],
+                 selected_rssi, CONFIG_ESPDROP_AWDL_AUTO_TARGET_SETTLE_MS,
+                 CONFIG_ESPDROP_AWDL_AUTO_TARGET_MARGIN_DB);
+    }
+    return selected_now;
+#else
+    (void)observed_at_us;
     return false;
 #endif
 }

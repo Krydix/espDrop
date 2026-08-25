@@ -187,6 +187,14 @@ int main(int argc, char **argv)
     assert(!espdrop_airdrop_build_dvzip_block_header(
         dvzip, UINT32_C(0x80000000), true));
 
+    assert(espdrop_airdrop_should_use_single_zlib_block(10240U, 469U));
+    assert(espdrop_airdrop_should_use_single_zlib_block(
+        200000U, ESPDROP_AIRDROP_DVZIP_STREAM_BLOCK_BYTES));
+    assert(!espdrop_airdrop_should_use_single_zlib_block(
+        200000U, ESPDROP_AIRDROP_DVZIP_STREAM_BLOCK_BYTES + 1U));
+    assert(!espdrop_airdrop_should_use_single_zlib_block(10240U, 10240U));
+    assert(!espdrop_airdrop_should_use_single_zlib_block(0U, 0U));
+
     uint8_t pseudonym_random[16];
     uint8_t token_random[32];
     for (size_t index = 0U; index < sizeof(pseudonym_random); ++index) {

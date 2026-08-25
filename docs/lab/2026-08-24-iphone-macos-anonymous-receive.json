@@ -1,0 +1,70 @@
+{
+  "date": "2026-08-24",
+  "scope": "one attended AirDrop photo from a newly configured iPhone to the MacBook Air over the Everyone path",
+  "classification": "anonymous control: sender and receiver were not signed into the same Apple account",
+  "host": {
+    "product": "macOS",
+    "version": "26.6.2",
+    "build": "25G83",
+    "architecture": "arm64",
+    "awdlInterface": "awdl0",
+    "awdlMac": "ba:f3:e4:24:9f:1a",
+    "sharingdSha256": "c1923bb10f5d2842c119e1eff0c4aa5c45a248aaad1da61436b70fc39169ae77"
+  },
+  "capture": {
+    "startedUtc": "2026-08-24T04:11:05Z",
+    "durationSeconds": 120,
+    "sources": [
+      "filtered macOS sharingd unified log",
+      "DNS-SD browse with kDNSServiceFlagsIncludeAWDL",
+      "user confirmation that the transfer completed"
+    ],
+    "packetCapture": false,
+    "packetCaptureReason": "macOS denied access to the BPF device without elevated privileges"
+  },
+  "observations": {
+    "askReceivedAt": "2026-08-24T04:11:20.399030Z",
+    "askAcceptedAt": "2026-08-24T04:11:25.433569Z",
+    "uploadConnectionAt": "2026-08-24T04:11:25.595854Z",
+    "uploadReceivedAt": "2026-08-24T04:11:25.598041Z",
+    "uploadSucceededAt": "2026-08-24T04:11:27.272733Z",
+    "askToAcceptMilliseconds": 5035,
+    "acceptToUploadConnectionMilliseconds": 162,
+    "connectionPolicy": "distinct TLS connections for Ask and Upload",
+    "helloPresent": false,
+    "archive": "CPIO with adaptive compression",
+    "sourceAwldIpv6": "fe80::dc21:95ff:fed1:be4f",
+    "askTls": {
+      "version": "TLS 1.3",
+      "cipher": "TLS_AES_128_GCM_SHA256",
+      "group": "X25519",
+      "signatureAlgorithm": "rsa_pss_rsae_sha256",
+      "alpn": null,
+      "resumed": false,
+      "receiverRequestedOptionalClientCertificate": true,
+      "externalCertificateVerificationSucceeded": true
+    },
+    "metrics": {
+      "legacy": false,
+      "sender": false,
+      "discoverabilityLevel": 2,
+      "totalBytesBucket": "20M",
+      "bytesPerSecond": 3607228,
+      "success": true,
+      "fromShareSheet": true
+    }
+  },
+  "confirmed": [
+    "An unrelated iPhone can send to the Mac through the Everyone route without a shared Apple-account identity.",
+    "The receiver obtained Ask and waited for explicit user acceptance before the sender opened Upload.",
+    "Ask and Upload used separate TCP/TLS flows to the receiver's AirDrop Bonjour port.",
+    "The iPhone omitted Hello on this receiver flow.",
+    "The successful photo payload used CPIO archiving with adaptive compression."
+  ],
+  "notConfirmed": [
+    "Encrypted request headers and plist values were not recovered from the unified log.",
+    "The exact adaptive-compression block framing was not visible without plaintext termination or a decrypted packet capture.",
+    "This trace does not establish why the same iPhone did not list the espDrop receiver advertisement."
+  ],
+  "implementationDecision": "Retain fresh Upload as the proven iPhone-sender-to-Mac-receiver topology. Do not generalize it to espDrop's reverse sender direction: the anonymous Mac-to-iPhone control reused the accepted Ask TCP/TLS flow."
+}

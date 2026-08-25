@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "espdrop/awdl_tlv.h"
+#include "espdrop/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +21,9 @@ typedef struct {
     bool has_airdrop_tcp;
     bool has_airdrop_udp;
     bool has_asquic;
+    bool has_airdrop_endpoint;
+    uint16_t airdrop_port;
+    char airdrop_service_id[ESPDROP_SERVICE_ID_MAX_BYTES];
 } espdrop_awdl_service_profile_t;
 
 espdrop_awdl_parse_result_t espdrop_awdl_scan_service_responses(

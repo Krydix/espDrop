@@ -30,6 +30,30 @@ static size_t append_record(
     return 3U + value_length;
 }
 
+static size_t append_srv_record(
+    uint8_t *output,
+    const uint8_t *name,
+    size_t name_length,
+    uint16_t port)
+{
+    const uint8_t target[] = {
+        0U, 0U, 0U, 0U,
+        (uint8_t)(port >> 8U), (uint8_t)port,
+        4U, 'h', 'o', 's', 't', 0xc0U, 0x0cU,
+    };
+    const uint16_t value_length =
+        (uint16_t)(2U + name_length + 1U + 2U + 2U + sizeof(target));
+    output[0] = 2U;
+    put_le16(output + 1U, value_length);
+    put_le16(output + 3U, (uint16_t)(name_length + 1U));
+    memcpy(output + 5U, name, name_length);
+    output[5U + name_length] = 33U;
+    put_le16(output + 6U + name_length, sizeof(target));
+    put_le16(output + 8U + name_length, 0U);
+    memcpy(output + 10U + name_length, target, sizeof(target));
+    return 3U + value_length;
+}
+
 int main(void)
 {
     uint8_t tlvs[128];
@@ -60,6 +84,15 @@ int main(void)
     assert(profile.has_airdrop_tcp);
     assert(!profile.has_airdrop_udp);
     assert(profile.has_asquic);
+    assert(!profile.has_airdrop_endpoint);
+
+    length = append_srv_record(tlvs, instance_name,
+                               sizeof(instance_name), 8770U);
+    assert(espdrop_awdl_scan_service_responses(
+               tlvs, length, &profile) == ESPDROP_AWDL_PARSE_OK);
+    assert(profile.has_airdrop_endpoint);
+    assert(profile.airdrop_port == 8770U);
+    assert(strcmp(profile.airdrop_service_id, "demo") == 0);
 
     const uint8_t expanded_airdrop[] = {
         8U, '_', 'a', 'i', 'r', 'd', 'r', 'o', 'p',

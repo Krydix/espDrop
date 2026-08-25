@@ -1,6 +1,6 @@
 # Unknowns and experiment ledger
 
-Status date: 2026-08-23.
+Status date: 2026-08-24.
 
 This file is the source of truth for claims that espDrop has not yet
 demonstrated. A milestone moves to confirmed only with a capture/log artifact
@@ -75,6 +75,14 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
 - [x] ICMPv6 ESP → iPhone; a bounded run received the matching type-129 Echo
   Reply after advertising the iPhone's observed sequence verbatim.
 - [ ] ICMPv6 iPhone → ESP.
+- [x] Test whether ESP-IDF 5.4's exported private station BSSID/RX-policy
+  transitions enable ACK-capable promiscuous reception. Both the normal
+  pre-authentication policy and its authenticated transition remained stable,
+  but 64 directed TCP SYN submissions across two bounded Mac-target runs
+  produced zero frames addressed to the ESP and no TCP connection. These
+  wrappers are not the missing active-monitor switch. The lab hook remains
+  version-pinned and default-off. Evidence is in
+  [`lab/2026-08-24-esp32s3-active-rx-policy.json`](lab/2026-08-24-esp32s3-active-rx-policy.json).
 - [x] mDNS multicast in both directions; an ESP-IDF UDP/5353 socket sent six
   `_airdrop._tcp.local` PTR queries and received four DNS responses from two
   Apple AWDL peers through the custom netif.
@@ -134,10 +142,11 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
   Mac's nine records with zero errors. The peer table only selects a receiver
   when exactly one fresh protocol-confirmed candidate exists.
 - [x] Select a live ephemeral AirDrop lab target without rebuilding firmware.
-  With no explicit target, the bounded image waits for a parsed
-  `_airdrop._tcp` MIF, locks that peer in RAM for one session, and records the
-  selection. It no longer filters by election distance. The selected peer
-  must pass OWL's MIF/version/device-class validity predicate. Evidence is in
+  With no explicit target, the bounded image observes fresh valid
+  `_airdrop._tcp` MIF candidates for one second, requires at least -70 dBm and
+  an 8 dB lead over the runner-up, then locks the selected ephemeral peer in
+  RAM for one session. Arrival order no longer decides the recipient, and an
+  unclear field remains explicitly ambiguous. The original same-boot proof is in
   [`lab/2026-08-23-awdl-owl-direct-peer.json`](lab/2026-08-23-awdl-owl-direct-peer.json).
 - [x] Repeatably reconstruct a complete PTR/SRV/TXT/AAAA receiver in one
   retained hardware artifact. The direct-peer run reconstructed
@@ -177,16 +186,26 @@ the already-proven direct AWDL/IPv6 path is. Evidence is in
   accepted; the opposite direction remains open. The successful attended send
   is in
   [`lab/2026-08-24-airdrop-upload.json`](lab/2026-08-24-airdrop-upload.json).
-- [x] Confirm TransferID continuity and connection reuse for the working
-  sender profile. One attended run reused the accepted TLS connection and the
-  exact uppercase UUID from `/Ask`; `/Upload` returned 200 and the file landed.
-  This confirms one working profile, not that alternate profiles must fail.
+- [x] Confirm TransferID continuity and connection topology for sender
+  profiles. One small espDrop transfer reused the accepted TLS connection and
+  landed successfully. The clean anonymous iPhone-to-Mac control instead
+  waited for acceptance and then opened a distinct Upload connection 162 ms
+  later. In the reverse anonymous Mac-to-iPhone control, the Upload request
+  object joined the Ask object's existing HTTP/1, TCP, and TLS flow as stream
+  2. espDrop's sender follows this direction-specific same-socket topology
+  while preserving the exact accepted TransferID. Evidence is in
+  [`lab/2026-08-24-iphone-macos-anonymous-receive.json`](lab/2026-08-24-iphone-macos-anonymous-receive.json)
+  and
+  [`lab/2026-08-24-macos-iphone-anonymous-send.json`](lab/2026-08-24-macos-iphone-anonymous-send.json).
 - [ ] Confirm cpio versus dvzip by file type.
   One zlib-compressed dvzip block containing an ODC cpio JPEG archive is now
   hardware-proven from both contiguous and two-pass streaming senders. Three
-  stored-dvzip controls hit sender TLS timeouts before an HTTP response, so
-  stored-block receiver acceptance remains unproven. Bare cpio and other file
-  types remain untested.
+  stored-dvzip controls hit sender TLS timeouts before the corrected IPv6 MTU
+  and PSRAM queue path. A later attended relay sent a 53,359-byte JPEG in one
+  61,440-byte stored block and received Upload HTTP 200, proving stored dvzip
+  against the stock iPhone. Relay sizing selects compressed output only when
+  it fits one 128 KiB dvzip block and otherwise emits bounded stored blocks.
+  Bare cpio and other file types remain untested.
 - [ ] Prove bounded streaming receive to microSD.
 - [x] Prove one embedded JPEG send to a stock iPhone. The 445-byte lab fixture
   arrived as `hello.jpg` after explicit acceptance, with no retry.
